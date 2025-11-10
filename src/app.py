@@ -334,12 +334,14 @@ def main():
                 token_iter_raw = llm.generate_stream(user_text, lang_hint=user_lang, mode="precise")
 
                 # netezește streamul în fraze stabile:
+                tts_cfg = cfg["tts"]
+                min_chunk_chars = int(tts_cfg.get("min_chunk_chars", 60))
                 shaped = shape_stream(
                     token_iter_raw,
-                    prebuffer_chars=120,
-                    min_chunk_chars=int(cfg["tts"].get("min_chunk_chars", 60)),
-                    soft_max_chars=140,
-                    max_idle_ms=250,
+                    prebuffer_chars=int(tts_cfg.get("prebuffer_chars", 120)),
+                    min_chunk_chars=min_chunk_chars,
+                    soft_max_chars=int(tts_cfg.get("soft_max_chars", 140)),
+                    max_idle_ms=int(tts_cfg.get("max_idle_ms", 250)),
                 )
 
                 # Capture + gard de oprire
@@ -363,7 +365,7 @@ def main():
                     token_iter,
                     lang=user_lang,
                     on_first_speak=_mark_tts_start,
-                    min_chunk_chars=int(cfg["tts"].get("min_chunk_chars", 60)),
+                    min_chunk_chars=min_chunk_chars,
                 )
 
                 # BARGE-IN în timpul TTS (protejată anti-eco și cu arm-delay)

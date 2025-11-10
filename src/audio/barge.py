@@ -146,6 +146,15 @@ class BargeInListener:
         self._t0_ms = int(time.monotonic() * 1000)
         self._last_trigger_ms = 0
 
+        # ——— Dinamica prag RMS în funcție de “leak” (eco TTS) ———
+        self.leak_margin_db = float(cfg_audio.get("barge_leak_margin_db", 3.0))
+        self.leak_decay_ms = int(cfg_audio.get("barge_leak_decay_ms", max(1200, self.cooldown_ms)))
+        self._leak_baseline_dbfs: Optional[float] = None
+        self._last_leak_update_ms: int = 0
+
+        self.require_cobra = bool(cfg_audio.get("barge_require_cobra", False))
+        self.cobra_relax_db = float(cfg_audio.get("barge_cobra_relax_db", 3.0))
+
         # ——— Praguri spectrale/acustice ———
         self.min_rms_dbfs = float(cfg_audio.get("barge_min_rms_dbfs", -28.0))
         self.highpass_hz = float(cfg_audio.get("barge_highpass_hz", 300.0))
@@ -223,7 +232,36 @@ class BargeInListener:
         self._cobra_rem = data[idx:]
         return triggered
 
-    def _debug_meter(self, rms_db: float, cobra_prob: Optional[float], zcr: Optional[float], detected: bool, cobra_hit: bool) -> None:
+    def _maybe_decay_leak(self, now_ms: int) -> None:
+        if self._leak_baseline_dbfs is None:
+            return
+        if (now_ms - self._last_leak_update_ms) > self.leak_decay_ms:
+            self._leak_baseline_dbfs = None
+            self._last_leak_update_ms = now_ms
+
+    def _update_leak_baseline(self, rms_db: float, now_ms: int, fast: bool = False) -> None:
+        if not math.isfinite(rms_db):
+            return
+        if rms_db <= -90.0:
+            return
+        if self._leak_baseline_dbfs is None:
+            self._leak_baseline_dbfs = rms_db
+        else:
+            if not fast and rms_db > self._leak_baseline_dbfs + self.leak_margin_db * 2:
+                rms_db = self._leak_baseline_dbfs + self.leak_margin_db * 2
+            alpha = 0.35 if fast else 0.12
+            self._leak_baseline_dbfs = (1.0 - alpha) * self._leak_baseline_dbfs + alpha * rms_db
+        self._last_leak_update_ms = now_ms
+
+    def _debug_meter(
+        self,
+        rms_db: float,
+        cobra_prob: Optional[float],
+        zcr: Optional[float],
+        detected: bool,
+        cobra_hit: bool,
+        leak_db: Optional[float] = None
+    ) -> None:
         if not self.debug_meter:
             return
         now_ms = int(time.monotonic() * 1000)
@@ -244,9 +282,10 @@ class BargeInListener:
         filled = min(bar_len, int(round(value * bar_len)))
         bar = "#" * filled + "-" * (bar_len - filled)
         zcr_str = f" zcr={zcr:.2f}" if zcr is not None else ""
+        leak_str = f" leak={leak_db:.1f}dB" if leak_db is not None else ""
         status = "Y" if detected else "n"
         src = "C" if cobra_hit else "V"
-        self.log.info(f"[BARGE] |{bar}| {label}{zcr_str} det={status}/{src}")
+        self.log.info(f"[BARGE] |{bar}| {label}{zcr_str}{leak_str} det={status}/{src}")
 
     def _is_human_voice(self, pcm_i16: np.ndarray) -> bool:
         """
@@ -256,33 +295,55 @@ class BargeInListener:
         3. Zero-crossing rate în interval vocii umane
         4. VAD confirmă speech
         """
-        # 1) RMS check (anti-eco TTS)
+        now_ms = int(time.monotonic() * 1000)
+        self._maybe_decay_leak(now_ms)
+
+        # Cobra analizează PCM brut (fără highpass)
+        cobra_detected = False
+        cobra_prob: Optional[float] = None
+        if self.cobra_enabled and self._cobra is not None:
+            cobra_detected = self._cobra_process(pcm_i16)
+            cobra_prob = self._cobra_last_prob
+            if not cobra_detected and (now_ms - self._cobra_last_active_ms) <= self.voice_hold_ms:
+                cobra_detected = True
+
+        leak_db = self._leak_baseline_dbfs
         rms = _rms_dbfs(pcm_i16)
-        if rms < self.min_rms_dbfs:
-            self._debug_meter(rms, self._cobra_last_prob if self.cobra_enabled else None, None, False, False)
+
+        # Ajustează pragul RMS dinamic
+        margin = self.leak_margin_db
+        if cobra_detected:
+            margin = min(self.leak_margin_db, self.cobra_relax_db)
+
+        rms_threshold = self.min_rms_dbfs
+        if leak_db is not None:
+            rms_threshold = max(rms_threshold, leak_db + margin)
+
+        if self.cobra_enabled and self.require_cobra:
+            if not cobra_detected:
+                self._update_leak_baseline(rms, now_ms, fast=False)
+                self._debug_meter(rms, cobra_prob, None, False, False, leak_db)
+                return False
+        elif rms < rms_threshold:
+            self._update_leak_baseline(rms, now_ms, fast=False)
+            self._debug_meter(rms, cobra_prob, None, False, cobra_detected, leak_db)
             return False
 
         # 2) High-pass filtering (anti-zgomot jos-frecvent)
         pcm_filtered = _highpass_filter(pcm_i16, self.highpass_hz, self.sr)
 
-        now_ms = int(time.monotonic() * 1000)
-
-        cobra_detected = False
-        cobra_prob: Optional[float] = None
-        if self.cobra_enabled and self._cobra is not None:
-            cobra_detected = self._cobra_process(pcm_filtered)
-            cobra_prob = self._cobra_last_prob
-            if not cobra_detected and (now_ms - self._cobra_last_active_ms) <= self.voice_hold_ms:
-                cobra_detected = True
-
-        # 3) Zero-crossing rate (anti-zgomot impulsiv)
-        if not cobra_detected:
-            zcr = _zero_crossing_rate(pcm_filtered)
-            if not (self.zcr_min <= zcr <= self.zcr_max):
-                self._debug_meter(rms, cobra_prob, zcr, False, cobra_detected)
-                return False
-        else:
+        if self.cobra_enabled and self.require_cobra:
             zcr = None
+        else:
+            # 3) Zero-crossing rate (anti-zgomot impulsiv)
+            if not cobra_detected:
+                zcr = _zero_crossing_rate(pcm_filtered)
+                if not (self.zcr_min <= zcr <= self.zcr_max):
+                    self._update_leak_baseline(rms, now_ms, fast=False)
+                    self._debug_meter(rms, cobra_prob, zcr, False, cobra_detected, leak_db)
+                    return False
+            else:
+                zcr = None
 
         # 4) VAD final check (Cobra sau WebRTC)
         if cobra_detected:
@@ -295,8 +356,12 @@ class BargeInListener:
 
         if detected:
             self._last_user_voice_ms = now_ms
-        self._debug_meter(rms, cobra_prob, zcr, detected, cobra_detected)
-        return detected
+            self._debug_meter(rms, cobra_prob, zcr, True, cobra_detected, leak_db)
+            return True
+
+        self._update_leak_baseline(rms, now_ms, fast=False)
+        self._debug_meter(rms, cobra_prob, zcr, False, cobra_detected, leak_db)
+        return False
 
     def heard_speech(self, need_ms: int = None) -> bool:
         """
@@ -312,7 +377,10 @@ class BargeInListener:
         if (now_ms - self._t0_ms) < self.arm_after_ms:
             try:
                 while True:
-                    self.q.get_nowait()
+                    block = self.q.get_nowait()
+                    pcm = np.clip(block[:, 0], -1, 1)
+                    pcm_i16 = (pcm * 32767.0).astype(np.int16)
+                    self._update_leak_baseline(_rms_dbfs(pcm_i16), int(time.monotonic() * 1000), fast=True)
             except queue.Empty:
                 pass
             return False

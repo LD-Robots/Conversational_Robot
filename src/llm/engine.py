@@ -1,7 +1,7 @@
 # src/llm/engine.py
 from __future__ import annotations
 from typing import Dict, Optional
-import os, requests, json
+import os, requests, json, time
 from src.telemetry.metrics import observe_hist, llm_latency, llm_first_token_latency, wrap_stream_for_first_token
 
 class LLMLocal:
@@ -125,6 +125,7 @@ class LLMLocal:
         sys = (self.system or "").strip()
         prompt = f"{sys}\n{safety}\nUser ({lang_hint}): {user_text}\nAssistant:"
 
+        start = time.perf_counter()
         with requests.post(url, json={
             "model": self.model,
             "prompt": prompt,
@@ -138,6 +139,7 @@ class LLMLocal:
             }
         }, stream=True, timeout=120) as resp:
             resp.raise_for_status()
+            first_token_s = None
             for line in resp.iter_lines(decode_unicode=True):
                 if not line:
                     continue
@@ -145,9 +147,14 @@ class LLMLocal:
                     data = json.loads(line)
                     tok = (data.get("response") or "")
                     if tok:
+                        if first_token_s is None:
+                            first_token_s = time.perf_counter()
+                            self.log.info(f"LLM first token in {first_token_s - start:.2f}s")
                         yield tok
                 except Exception:
                     continue
+            if first_token_s is not None:
+                self.log.info(f"LLM stream completed in {time.perf_counter() - start:.2f}s")
 
     def _openai_chat(self, user_text: str, lang_hint: str) -> str:
         try:

@@ -3,45 +3,41 @@ block_ms: 20
 
 # VAD agresiv pentru sesiuni (3 = cel mai strict)
 vad_aggressiveness: 3
-silence_ms_to_end: 1400
+silence_ms_to_end: 1500 #1400
 max_record_seconds: 6
 session_idle_seconds: 12
-min_valid_seconds: 1.1
+min_valid_seconds: 0.9 #1.1
 
 # ——— BARGE-IN INTELIGENT (doar voce umană) ———
 barge_enabled: true
-barge_allow_during_tts: true
-barge_voice_hold_ms: 300          # păstrează "vocea activă" câteva sute ms pentru continuitate
-barge_debug_meter: false           # afișează în log un VU bar în timp ce ascultă (debug)
-barge_debug_interval_ms: 120       # cât de des actualizează bara (ms)
-barge_voice_drop_ms: 10            # scade bufferul de voce cu 20ms la un bloc fără vorbire
+barge_allow_during_tts: true         # ok dacă AEC e bun; altfel pune false
+barge_voice_hold_ms: 400 #320
+barge_debug_meter: true #false
+barge_debug_interval_ms: 120
+barge_voice_drop_ms: 10
 
-# Prag temporal: cât de multă voce continuă trebuie (filtru anti-impuls)
-barge_min_voice_ms: 250             # minim 350ms de voce continuă
+barge_min_voice_ms: 1200 #550           # 400–600ms = echilibrat
+barge_min_rms_dbfs: -14 #-27              # un pic mai permisiv decât STRICT
 
-# Anti-eco TTS: nivelul minim acceptat (vocea e mai tare decât TTS leak)
-barge_min_rms_dbfs: -31              # prag RMS ridicat: doar vorbire puternică
+barge_highpass_hz: 240 #180               # taie huruit, păstrează timbrul vocii
 
-# Spectral filtering: ignoră frecvențe joase (bătăi în masă ~50-200 Hz)
-barge_highpass_hz: 300               # taie tot sub 300 Hz (vocea start la ~80-100 Hz, dar energia e la 300+)
+# ZCR ca filtru auxiliar, dar nu “omorâtor”
+barge_zcr_min: 0.12 #0.07
+barge_zcr_max: 0.22 #0.28
 
-# Zero-crossing rate: vocea umană are ZCR moderat, zgomotele impulsive au ZCR extreme
-barge_zcr_min: 0.05                  # prag minim ZCR (anti-zgomot constant josfrekvent)
-barge_zcr_max: 0.35                  # prag maxim ZCR (anti-zgomot impulsiv înalt)
+barge_debounce_ms: 400 #200
+barge_cooldown_ms: 2200 #1000
+barge_arm_after_ms: 2000 #1100
+barge_leak_margin_db: 12.0 #5.0          # ~4 dB peste eco-ul măsurat e suficient
+barge_leak_decay_ms: 2800 #1800           # cât timp păstrează baseline-ul eco-ului măsurat
+barge_require_cobra: true           # cere confirmare Cobra pentru barge-in (anti-eco)
+barge_cobra_relax_db: 0.0 #2.5           # când Cobra e activă, reduce pragul cu ~2.5 dB
 
-# Debounce & cooldown (anti-trigger repetat)
-barge_debounce_ms: 150
-barge_cooldown_ms: 800
-barge_arm_after_ms: 400              # delay după pornirea listener-ului (evită scurgeri inițiale)
-
-# Cobra VAD (Picovoice) — opțional, pentru detecție robustă de vorbire
 cobra:
   enabled: true
-  threshold: 0.55                   # p(speech) minim pentru a considera blocul ca vorbire
-  hold_ms: 260                      # timp cât păstrează state-ul "în vorbire" după un frame activ
+  threshold: 0.80 #0.78                     # prag puțin mai permisiv, dar încă selectiv
+  hold_ms: 260 #240
   access_key: "${PICOVOICE_ACCESS_KEY}"
-  # library_path: "/path/to/libpv_cobra.so"
-  # model_path: "/path/to/cobra_params.pv"
 
 # ——— Audio device & AEC ———
 prefer_echo_cancel: true

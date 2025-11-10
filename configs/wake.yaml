@@ -18,7 +18,7 @@ porcupine:
   # Variante:
   # 1) custom keyword(s) .ppn — recomandat pt 'hello robot'
   keyword_paths:
-    - "/home/dani/Hello-Robot_en_linux_v3_0_0/Hello-Robot_en_linux_v3_0_0.ppn"
+    - "/home/delia/Conversational_Robot/Conversational_Bot/voices/Hello-Robot_en_linux_v3_0_0.ppn"
   keywords:
     - "porcupine"
   

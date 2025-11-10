@@ -3,12 +3,16 @@ rate: 180
 volume: 0.7
 voice_ro_hint: "ro"
 voice_en_hint: "en"
+min_chunk_chars: 45           # bucăți mai mici -> start TTS mai rapid
+prebuffer_chars: 80           # cât așteaptă înainte de primul chunk
+soft_max_chars: 120           # forțează flush dacă propoziția e prea lungă
+max_idle_ms: 180              # flush dacă LLM tace pentru atât (ms)
 
 piper:
-  exe: "/home/dani/conversational_bot/Conversational_Bot/.venv/bin/piper"     # verifică cu: which piper
+  exe: "/home/delia/Conversational_Robot/Conversational_Bot/.venv/bin/piper"     # verifică cu: which piper
   model_ro: "voices/ro_RO-mihai-medium.onnx"
   config_ro: "voices/ro_RO-mihai-medium.onnx.json"
-  model_en: "voices/en_US-amy-medium.onnx"
+  model_en: "voices/en_US-amy-medium.onnx" 
   config_en: "voices/en_US-amy-medium.onnx.json"
   speaker_id: null
   length_scale: 1.0
