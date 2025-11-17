@@ -2,6 +2,7 @@
 from pathlib import Path
 import os
 import time
+import threading
 from rapidfuzz import fuzz
 from dotenv import load_dotenv, find_dotenv
 
@@ -17,6 +18,7 @@ from src.tts.engine import TTSLocal
 from src.core.wake import WakeDetector
 from src.utils.textnorm import normalize_text
 from src.audio.wake_porcupine import wait_for_wake as wait_for_wake_porcupine
+from src.audio.picovoice_stop import PicovoiceStopListener
 from src.llm.stream_shaper import shape_stream  # netezire stream LLM→TTS
 
 from src.telemetry.metrics import (
@@ -51,11 +53,7 @@ def is_goodbye(text: str) -> bool:
     if not t:
         return False
     # doar potriviri exacte; evităm trigger la cuvinte mai lungi (ex: "paine")
-    bye_exact = {
-        "ok bye", "okay bye", "bye", "goodbye",
-        "stop", "cancel", "enough",
-        "gata", "la revedere", "opreste", "oprim", "terminam"
-    }
+    bye_exact = {"goodbye robot", "good bye robot"}
     return t in bye_exact
 
 
@@ -78,9 +76,7 @@ def main():
     ack_ro = cfg["wake"]["acknowledgement"]["ro"]
     ack_en = cfg["wake"]["acknowledgement"]["en"]
 
-    # -------- Porcupine config + fallback sigur --------
-    WAKE_ENGINE = (os.getenv("WAKE_ENGINE") or cfg["wake"].get("engine") or "auto").lower()
-
+    # -------- Wake config (porcupine) --------
     PV_KEY = (
         os.getenv("PICOVOICE_ACCESS_KEY", "").strip()
         or (cfg["wake"].get("porcupine", {}) or {}).get("access_key", "").strip()
@@ -92,41 +88,80 @@ def main():
     PORC_SENS = float(os.getenv("PORCUPINE_SENSITIVITY", "0.6"))
     PORC_LANG = (os.getenv("PORCUPINE_LANG", "en") or "en").lower()
 
-    missing = []
-    if not PV_KEY:
-        missing.append("PICOVOICE_ACCESS_KEY")
-    if not PPN_PATH:
-        missing.append("PORCUPINE_PPN")
-    elif not Path(PPN_PATH).exists():
-        missing.append(f"ppn missing: {PPN_PATH}")
+    def _validate_porcupine():
+        errors = []
+        if not PV_KEY:
+            errors.append("PICOVOICE_ACCESS_KEY lipsește")
+        if not PPN_PATH:
+            errors.append("PORCUPINE_PPN lipsește")
+        elif not Path(PPN_PATH).exists():
+            errors.append(f"ppn missing: {PPN_PATH}")
+        return (len(errors) == 0), errors
 
-    # Politică de selectare:
-    # - 'porcupine' -> doar dacă cheile/fișierul sunt valide; altfel fallback la text + warning
-    # - 'auto' -> porcupine dacă e configurat complet; altfel text
     use_porcupine = False
-    if WAKE_ENGINE == "porcupine":
-        if not missing:
-            use_porcupine = True
-        else:
-            logger.warning(f"🔕 Porcupine cerut, dar lipsesc: {', '.join(missing)} — fac fallback pe wake via text (ASR).")
-            use_porcupine = False
-    elif WAKE_ENGINE == "auto":
-        use_porcupine = (len(missing) == 0)
+    ok, errs = _validate_porcupine()
+    if ok:
+        use_porcupine = True
     else:
-        use_porcupine = False
+        logger.warning(f"🔕 Porcupine cerut, dar lipsesc: {', '.join(errs)} — revin pe wake via text.")
 
-    logger.info(f"🔔 Wake engine: {'porcupine' if use_porcupine else 'text'}")
+    active_engine = "porcupine" if use_porcupine else "text"
+    logger.info(f"🔔 Wake engine: {active_engine}")
     if not use_porcupine:
-        logger.info("ℹ️ Hint: setează PICOVOICE_ACCESS_KEY și PORCUPINE_PPN în configs/.env sau engine=asr.")
+        logger.info("ℹ️ Wake fallback: recunosc wake phrase-ul din transcript (ASR).")
 
-    # „circuit breaker”: dacă Porcupine eșuează repetat la runtime -> trecem pe text până la repornire
+    # Circuit-breaker doar pentru Porcupine
     porcupine_failures = 0
     PORCUPINE_MAX_FAILS = 3
 
-    logger.info("🤖 Standby: spune „hello robot” sau „salut robot” ca să pornești conversația.")
+    logger.info("🤖 Standby: spune „hello robot” ca să pornești conversația.")
     state = BotState.LISTENING
     fast_exit_cfg = (cfg.get("fast_exit") or cfg.get("core", {}).get("fast_exit") or {})
     fast_exit = FastExit(tts, llm, state, logger, fast_exit_cfg, barge=None)
+    stop_barge_event = threading.Event()
+    stop_hotword_cfg = (
+        cfg.get("stop_hotword")
+        or cfg.get("core", {}).get("stop_hotword")
+        or fast_exit_cfg.get("picovoice")
+        or {}
+    )
+    stop_mode = (stop_hotword_cfg.get("mode") or "exit").lower()
+    stop_label = (stop_hotword_cfg.get("label") or "stop").strip() or "stop"
+    stop_access_key = ""
+    stop_ppn_path = ""
+    stop_sensitivity = 0.6
+    use_stop_hotword = bool(stop_hotword_cfg.get("enabled"))
+    stop_listener = None
+
+    if use_stop_hotword:
+        stop_access_key = (
+            (stop_hotword_cfg.get("access_key") or "").strip()
+            or PV_KEY
+            or os.getenv("PICOVOICE_ACCESS_KEY", "").strip()
+        )
+        stop_ppn_path = (
+            os.getenv("PORCUPINE_STOP_PPN", "").strip()
+            or (stop_hotword_cfg.get("keyword_path") or "").strip()
+        )
+        stop_sens_raw = os.getenv("PORCUPINE_STOP_SENSITIVITY", None)
+        if stop_sens_raw in (None, ""):
+            stop_sens_raw = stop_hotword_cfg.get("sensitivity", 0.6)
+        try:
+            stop_sensitivity = float(stop_sens_raw)
+        except (TypeError, ValueError):
+            stop_sensitivity = 0.6
+        if not stop_access_key or not stop_ppn_path:
+            logger.warning("🔕 Stop hotword: lipsesc access_key/keyword_path pentru Porcupine.")
+            use_stop_hotword = False
+        elif not Path(stop_ppn_path).exists():
+            logger.warning(f"🔕 Picovoice stop keyword lipsește: {stop_ppn_path}")
+            use_stop_hotword = False
+
+    if use_stop_hotword:
+        if stop_mode == "barge":
+            logger.info(f"🛑 Stop hotword activ (porcupine): spune „{stop_label}” ca să oprești TTS-ul și să revină la ascultare.")
+        else:
+            logger.info(f"🛑 Stop hotword activ (porcupine): spune „{stop_label}” ca să închizi instant sesiunea.")
 
     # Încercăm să ne conectăm la "partial" / "final" dacă ASR expune callback-uri.
     try:
@@ -167,7 +202,7 @@ def main():
 
     try:
         while True:
-            # —— STANDBY: Porcupine (dacă e activ și nu s-a „ars” breaker-ul) ——
+            # —— STANDBY: Porcupine -> text fallback ——
             if use_porcupine:
                 ok = wait_for_wake_porcupine(
                     cfg_audio=cfg["audio"],
@@ -241,11 +276,11 @@ def main():
                 "max_record_seconds": int(cfg["audio"].get("max_record_seconds", 6)),
                 "vad_aggressiveness": int(cfg["audio"].get("vad_aggressiveness", 3)),
 
-                # important: permite utterance scurt pentru "ok bye"
+                # important: permite utterance scurt pentru "goodbye robot"
                 "min_valid_seconds": 0.35,       # permiți fraze foarte scurte
             })
 
-            logger.info("🟢 Sesiune activă (spune „ok bye” ca să închizi).")
+            logger.info("🟢 Sesiune activă (spune „goodbye robot” ca să închizi).")
             state = BotState.LISTENING
             sessions_started.inc()
 
@@ -254,159 +289,193 @@ def main():
             # inițializări lipsă (FIX)
             session_idle_seconds = int(cfg["audio"].get("session_idle_seconds", 12))
             last_activity = time.time()
-
-            while time.time() - last_activity < session_idle_seconds:
-                user_wav = data_dir / "cache" / "user_utt.wav"
-                path_user, dur = record_until_silence(ask_cfg, user_wav, logger)
-
-                if dur < float(ask_cfg.get("min_valid_seconds", 0.35)):
-                    continue
-
-                state = BotState.THINKING
-
-                # ——— ASR: strict RO/EN ———
-                asr_res = None
-                user_text = ""
-                user_lang = "en"
-                try:
-                    if hasattr(asr, "transcribe_ro_en"):
-                        asr_res = asr.transcribe_ro_en(path_user)
+            stop_listener = None
+            stop_barge_event.clear()
+            if use_stop_hotword:
+                def _stop_cb(_label: str):
+                    if stop_mode == "barge":
+                        if tts.is_speaking():
+                            logger.info("🟠 Stop hotword detectat — opresc TTS și revin la listening.")
+                            stop_barge_event.set()
+                        else:
+                            logger.info("🟠 Stop hotword detectat, dar TTS nu vorbește — ignor.")
                     else:
-                        asr_res = asr.transcribe(path_user, language_override="en")
-                    user_text = (asr_res.get("text") or "").strip()
-                    user_lang = asr_res.get("lang", "en")
-                    if user_lang not in ("ro", "en"):
-                        user_lang = "en"
-                except Exception:
-                    asr_res = {"text": "", "lang": "en"}
+                        fast_exit.trigger_exit("stop-hotword")
+                try:
+                    stop_listener = PicovoiceStopListener(
+                        cfg_audio=cfg["audio"],
+                        access_key=stop_access_key,
+                        keyword_path=stop_ppn_path,
+                        sensitivity=stop_sensitivity,
+                        label=stop_label,
+                        logger=logger,
+                        on_detect=_stop_cb,
+                    )
+                    stop_listener.start()
+                except Exception as e:
+                    logger.warning(f"🔕 Stop hotword dezactivat pentru sesiunea curentă: {e}")
+                    stop_listener = None
+
+            try:
+                while time.time() - last_activity < session_idle_seconds:
+                    user_wav = data_dir / "cache" / "user_utt.wav"
+                    path_user, dur = record_until_silence(ask_cfg, user_wav, logger)
+
+                    if dur < float(ask_cfg.get("min_valid_seconds", 0.35)):
+                        continue
+
+                    state = BotState.THINKING
+
+                    # ——— ASR: strict RO/EN ———
+                    asr_res = None
                     user_text = ""
                     user_lang = "en"
+                    try:
+                        if hasattr(asr, "transcribe_ro_en"):
+                            asr_res = asr.transcribe_ro_en(path_user)
+                        else:
+                            asr_res = asr.transcribe(path_user, language_override="en")
+                        user_text = (asr_res.get("text") or "").strip()
+                        user_lang = asr_res.get("lang", "en")
+                        if user_lang not in ("ro", "en"):
+                            user_lang = "en"
+                    except Exception:
+                        asr_res = {"text": "", "lang": "en"}
+                        user_text = ""
+                        user_lang = "en"
 
-                logger.info(f"🧏 [{user_lang}] {user_text}")
+                    logger.info(f"🧏 [{user_lang}] {user_text}")
 
-                # ——— Anti-eco textual ———
-                try:
-                    ut = normalize_text(user_text)
-                    bt = normalize_text(last_bot_reply)
-                    if len(ut) > 8 and len(bt) > 8:
-                        sim = fuzz.partial_ratio(ut, bt)
-                        if sim >= 85:
-                            logger.info(f"🔇 Ignor input (eco TTS) sim={sim}")
-                            continue
-                except Exception:
-                    pass
+                    # ——— Anti-eco textual ———
+                    try:
+                        ut = normalize_text(user_text)
+                        bt = normalize_text(last_bot_reply)
+                        if len(ut) > 8 and len(bt) > 8:
+                            sim = fuzz.partial_ratio(ut, bt)
+                            if sim >= 85:
+                                logger.info(f"🔇 Ignor input (eco TTS) sim={sim}")
+                                continue
+                    except Exception:
+                        pass
 
-                if not user_text:
-                    continue
+                    if not user_text:
+                        continue
 
-                # FastExit (inclusiv pe transcript final)
-                if fast_exit.on_final(user_text):
-                    logger.info("🔴 FastExit: închis pe transcript final.")
-                    break
+                    # FastExit (inclusiv pe transcript final)
+                    if fast_exit.on_final(user_text):
+                        logger.info("🔴 FastExit: închis pe transcript final.")
+                        break
 
-                # închidere sesiune pe "ok bye"
-                if is_goodbye(user_text):
+                    # închidere sesiune pe "goodbye robot"
+                    if is_goodbye(user_text):
+                        state = BotState.SPEAKING
+                        tts_speak_calls.inc()
+                        tts.say("La revedere!" if user_lang == "ro" else "Goodbye!", lang=user_lang)
+                        logger.info("🔴 Sesiune închisă de utilizator (goodbye robot).")
+                        break
+
+                    # ——— STREAMING: LLM → TTS ———
+                    interactions.inc()
+                    rt_start = time.perf_counter()
+
+                    # === Debug dir per sesiune ===
+                    from datetime import datetime
+                    from src.utils.debug_speech import DebugSpeech
+                    session_dir = data_dir / "debug" / datetime.now().strftime("%Y%m%d_%H%M%S")
+                    debugger = DebugSpeech(session_dir, user_lang, logger)
+                    debugger.write_asr(user_text)
+
+                    reply_buf = []
+
+                    def _capture(gen):
+                        # tee generatorul cu debugger.tee
+                        for tok in debugger.tee(gen):
+                            reply_buf.append(tok)
+                            yield tok
+
+                    token_iter_raw = llm.generate_stream(user_text, lang_hint=user_lang, mode="precise")
+
+                    # netezește streamul în fraze stabile:
+                    tts_cfg = cfg["tts"]
+                    min_chunk_chars = int(tts_cfg.get("min_chunk_chars", 60))
+                    shaped = shape_stream(
+                        token_iter_raw,
+                        prebuffer_chars=int(tts_cfg.get("prebuffer_chars", 120)),
+                        min_chunk_chars=min_chunk_chars,
+                        soft_max_chars=int(tts_cfg.get("soft_max_chars", 140)),
+                        max_idle_ms=int(tts_cfg.get("max_idle_ms", 250)),
+                    )
+
+                    # Capture + gard de oprire
+                    def _abort_guard(gen):
+                        for tok in gen:
+                            if fast_exit.pending():
+                                break
+                            yield tok
+
+                    token_iter = _capture(_abort_guard(shaped))
+
+                    def _mark_tts_start():
+                        # round-trip metric
+                        round_trip.observe(time.perf_counter() - rt_start)
+                        # debug hook
+                        debugger.on_tts_start()
+
                     state = BotState.SPEAKING
                     tts_speak_calls.inc()
-                    tts.say("Bine, pa!" if user_lang == "ro" else "Okay, bye!", lang=user_lang)
-                    logger.info("🔴 Sesiune închisă de utilizator (ok bye).")
-                    break
+                    stop_barge_event.clear()
+                    tts.say_async_stream(
+                        token_iter,
+                        lang=user_lang,
+                        on_first_speak=_mark_tts_start,
+                        min_chunk_chars=min_chunk_chars,
+                    )
 
-                # ——— STREAMING: LLM → TTS ———
-                interactions.inc()
-                rt_start = time.perf_counter()
-
-                # === Debug dir per sesiune ===
-                from datetime import datetime
-                from src.utils.debug_speech import DebugSpeech
-                session_dir = data_dir / "debug" / datetime.now().strftime("%Y%m%d_%H%M%S")
-                debugger = DebugSpeech(session_dir, user_lang, logger)
-                debugger.write_asr(user_text)
-
-                reply_buf = []
-
-                def _capture(gen):
-                    # tee generatorul cu debugger.tee
-                    for tok in debugger.tee(gen):
-                        reply_buf.append(tok)
-                        yield tok
-
-                token_iter_raw = llm.generate_stream(user_text, lang_hint=user_lang, mode="precise")
-
-                # netezește streamul în fraze stabile:
-                tts_cfg = cfg["tts"]
-                min_chunk_chars = int(tts_cfg.get("min_chunk_chars", 60))
-                shaped = shape_stream(
-                    token_iter_raw,
-                    prebuffer_chars=int(tts_cfg.get("prebuffer_chars", 120)),
-                    min_chunk_chars=min_chunk_chars,
-                    soft_max_chars=int(tts_cfg.get("soft_max_chars", 140)),
-                    max_idle_ms=int(tts_cfg.get("max_idle_ms", 250)),
-                )
-
-                # Capture + gard de oprire
-                def _abort_guard(gen):
-                    for tok in gen:
-                        if fast_exit.pending():
-                            break
-                        yield tok
-
-                token_iter = _capture(_abort_guard(shaped))
-
-                def _mark_tts_start():
-                    # round-trip metric
-                    round_trip.observe(time.perf_counter() - rt_start)
-                    # debug hook
-                    debugger.on_tts_start()
-
-                state = BotState.SPEAKING
-                tts_speak_calls.inc()
-                tts.say_async_stream(
-                    token_iter,
-                    lang=user_lang,
-                    on_first_speak=_mark_tts_start,
-                    min_chunk_chars=min_chunk_chars,
-                )
-
-                # BARGE-IN în timpul TTS (protejată anti-eco și cu arm-delay)
-                if not bool(cfg["audio"].get("barge_enabled", True)):
-                    while tts.is_speaking():
-                        if fast_exit.pending():
-                            tts.stop()
-                            break
-                        time.sleep(0.05)
-                elif not bool(cfg["audio"].get("barge_allow_during_tts", True)):
-                    while tts.is_speaking():
-                        if fast_exit.pending():
-                            tts.stop()
-                            break
-                        time.sleep(0.05)
-                else:
-                    barge = BargeInListener(cfg["audio"], logger)
-                    fast_exit.barge = barge  # permite FastExit să verifice că vorbește userul, nu eco TTS
-                    try:
+                    # BARGE-IN în timpul TTS (protejată anti-eco și cu arm-delay)
+                    if not bool(cfg["audio"].get("barge_enabled", True)):
                         while tts.is_speaking():
-                            if fast_exit.pending():
+                            if fast_exit.pending() or stop_barge_event.is_set():
                                 tts.stop()
+                                stop_barge_event.clear()
                                 break
-                            need = int(cfg["audio"].get("barge_min_voice_ms", 650))
-                            if barge.heard_speech(need_ms=need):
-                                logger.info("⛔ Barge-in detectat — opresc TTS și trec la listening.")
+                            time.sleep(0.05)
+                    elif not bool(cfg["audio"].get("barge_allow_during_tts", True)):
+                        while tts.is_speaking():
+                            if fast_exit.pending() or stop_barge_event.is_set():
                                 tts.stop()
+                                stop_barge_event.clear()
                                 break
-                            time.sleep(0.03)
-                    finally:
-                        barge.close()
+                            time.sleep(0.05)
+                    else:
+                        barge = BargeInListener(cfg["audio"], logger)
+                        fast_exit.barge = barge  # permite FastExit să verifice că vorbește userul, nu eco TTS
+                        try:
+                            while tts.is_speaking():
+                                if fast_exit.pending() or stop_barge_event.is_set():
+                                    tts.stop()
+                                    stop_barge_event.clear()
+                                    break
+                                need = int(cfg["audio"].get("barge_min_voice_ms", 650))
+                                if barge.heard_speech(need_ms=need):
+                                    logger.info("⛔ Barge-in detectat — opresc TTS și trec la listening.")
+                                    tts.stop()
+                                    break
+                                time.sleep(0.03)
+                        finally:
+                            barge.close()
 
-                # finalizează logurile
-                debugger.on_tts_end()
-                last_bot_reply = "".join(reply_buf)
-                debugger.finish()
-                if fast_exit.pending():
-                    logger.info("🔴 FastExit: sesiune închisă (revenire în standby).")
-                    break
+                    # finalizează logurile
+                    debugger.on_tts_end()
+                    last_bot_reply = "".join(reply_buf)
+                    debugger.finish()
+                    if fast_exit.pending():
+                        logger.info("🔴 FastExit: sesiune închisă (revenire în standby).")
+                        break
 
-                last_activity = time.time()
+                    last_activity = time.time()
+            finally:
+                if stop_listener:
+                    stop_listener.stop()
 
             # —— ieșire din sesiune => standby ——
             state = BotState.LISTENING

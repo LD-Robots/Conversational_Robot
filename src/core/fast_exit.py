@@ -1,7 +1,7 @@
 from __future__ import annotations
 import time
 from rapidfuzz import fuzz
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 from src.utils.textnorm import normalize_text
 
 class FastExit:
@@ -30,7 +30,23 @@ class FastExit:
         self.fuzzy = int(cfg.get("fuzzy", 90))
         self.debounce_ms = int(cfg.get("debounce_ms", 120))
         self.min_chars = int(cfg.get("min_chars", 2))
-        self.confirm_tts = cfg.get("confirm_tts", "See you later!")
+        self.confirm_cfg = cfg.get("confirm_tts", "See you later!")
+        if isinstance(self.confirm_cfg, dict):
+            self.confirm_default = self.confirm_cfg.get("default") or self.confirm_cfg.get("en") or next(iter(self.confirm_cfg.values()), "")
+        else:
+            self.confirm_default = str(self.confirm_cfg or "")
+            self.confirm_cfg = None
+        raw_langs: Dict[str, str] = {}
+        for k, v in (cfg.get("phrase_langs") or {}).items():
+            try:
+                nk = normalize_text(k).lower().strip()
+                if nk:
+                    raw_langs[nk] = (v or "").lower().strip() or "en"
+            except Exception:
+                continue
+        self.phrase_langs = raw_langs
+        picovoice_cfg = cfg.get("picovoice") or {}
+        self.picovoice_lang = (picovoice_cfg.get("lang") or "").lower().strip() or None
         self.use_barge = bool(cfg.get("use_barge_check", True))
         self.barge = barge
 
@@ -109,9 +125,10 @@ class FastExit:
                             pass
 
         # 2) Feedback auditiv minimal (opțional)
-        if self.confirm_tts and hasattr(self.tts, "say") and callable(self.tts.say):
+        confirm_msg = self._select_confirm_message(matched)
+        if confirm_msg and hasattr(self.tts, "say") and callable(self.tts.say):
             try:
-                self.tts.say(self.confirm_tts)
+                self.tts.say(confirm_msg)
             except Exception:
                 pass
 
@@ -131,3 +148,22 @@ class FastExit:
             self.state = BotState.STANDBY
         except Exception:
             pass
+
+    def _select_confirm_message(self, matched: str) -> str:
+        if isinstance(self.confirm_cfg, dict):
+            lang = self._lang_for_phrase(matched)
+            if lang and lang in self.confirm_cfg:
+                return self.confirm_cfg[lang]
+            return self.confirm_default
+        return self.confirm_default
+
+    def _lang_for_phrase(self, matched: str) -> Optional[str]:
+        try:
+            norm = normalize_text(matched or "").lower().strip()
+        except Exception:
+            norm = ""
+        if norm and norm in self.phrase_langs:
+            return self.phrase_langs[norm]
+        if (matched or "").startswith("picovoice") and self.picovoice_lang:
+            return self.picovoice_lang
+        return None

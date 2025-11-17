@@ -63,6 +63,7 @@ class TTSCfg(BaseModel):
     piper: Optional[PiperCfg] = None
 
 class PorcupineCfg(BaseModel):
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
     enabled: bool = False
     access_key: Optional[str] = None
     ppn_path: Optional[str] = None
@@ -70,6 +71,7 @@ class PorcupineCfg(BaseModel):
     lang_hint: Optional[str] = Field("auto")  # "auto" | "en" | "ro"
 
 class WakeCfg(BaseModel):
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
     wake_phrases: List[str]
     acknowledgement: Dict[str, str]
     porcupine: Optional[PorcupineCfg] = None
@@ -81,7 +83,29 @@ class PathsCfg(BaseModel):
     data: str
     models: str
 
+class FastExitPicovoiceCfg(BaseModel):
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
+    enabled: bool = False
+    keyword_path: Optional[str] = None
+    sensitivity: float = Field(0.6, ge=0.1, le=1.0)
+    access_key: Optional[str] = None
+    label: Optional[str] = Field("stop")
+    lang: Optional[str] = Field("auto")
+
+class FastExitCfg(BaseModel):
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
+    enabled: bool = True
+    phrases: List[str] = Field(default_factory=lambda: ["ok bye", "ok, bye"])
+    fuzzy: int = Field(90, ge=0, le=100)
+    debounce_ms: int = Field(120, ge=0, le=2000)
+    min_chars: int = Field(2, ge=1, le=16)
+    confirm_tts: Optional[Dict[str, str] | str] = None
+    use_barge_check: bool = True
+    phrase_langs: Dict[str, str] = Field(default_factory=dict)
+    picovoice: Optional[FastExitPicovoiceCfg] = None
+
 class AppCfg(BaseModel):
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
     audio: AudioCfg
     asr: ASRCfg
     llm: LLMCfg
@@ -89,6 +113,8 @@ class AppCfg(BaseModel):
     wake: WakeCfg
     route: RouteCfg
     paths: PathsCfg
+    fast_exit: Optional[FastExitCfg] = None
+    core: Dict[str, Any] = Field(default_factory=dict)
 
 def validate_all(raw: dict) -> dict:
     model = AppCfg(**raw)

@@ -29,6 +29,14 @@ def load_yaml(name: str):
     return _expand_env_in_obj(data)
 
 def load_all() -> Dict[str, Any]:
+    core_cfg: Dict[str, Any] = {}
+    core_file = CFG / "core.yaml"
+    if core_file.exists():
+        try:
+            core_cfg = load_yaml("core.yaml") or {}
+        except Exception:
+            core_cfg = {}
+
     raw = {
         "audio": load_yaml("audio.yaml"),
         "asr":   load_yaml("asr.yaml"),
@@ -36,6 +44,8 @@ def load_all() -> Dict[str, Any]:
         "tts":   load_yaml("tts.yaml"),
         "wake":  load_yaml("wake.yaml"),
         "route": load_yaml("routing.yaml"),
+        "core":  core_cfg,
+        "fast_exit": (core_cfg.get("fast_exit") if isinstance(core_cfg, dict) else None),
         "paths": {
             "data": str((ROOT / "data").absolute()),
             "models": str((ROOT / "models").absolute()),

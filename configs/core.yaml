@@ -1,8 +1,23 @@
 fast_exit:
   enabled: true
-  phrases: ["ok bye","ok, bye"]
+  phrases: ["goodbye robot"]
   fuzzy: 90            
   debounce_ms: 120     # anti-spam
   min_chars: 2
-  confirm_tts: "See you later !"   # gol "" dacă nu vrei feedback
+  confirm_tts:
+    en: "See you later!"
+    ro: "Bine, ne auzim mai târziu!"
+    default: "See you later!"
+  phrase_langs:
+    "goodbye robot": "en"
   use_barge_check: true
+
+stop_hotword:
+  enabled: true
+  engine: openwakeword      # openwakeword | porcupine
+  model_path: "/home/delia/Conversational_Robot/Conversational_Bot/voices/stop_now.onnx"
+  threshold: 0.6
+  inference_framework: "onnx"
+  min_gap_ms: 900
+  label: "stop now"
+  mode: "barge"    # barge = doar oprește TTS; exit = închide sesiunea
