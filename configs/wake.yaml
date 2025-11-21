@@ -1,5 +1,5 @@
-engine: porcupine    # porcupine | asr
-threshold: 60           # folosit doar pentru fallback-ul text (ASR)
+engine: openwakeword   # openwakeword | text
+threshold: 60          # folosit doar pentru fallback-ul text (ASR)
 wake_phrases:
   - "hello robot"
 
@@ -7,11 +7,14 @@ acknowledgement:
   ro: "Da, te ascult."
   en: "Yes, I'm listening."
 
-# Bloc Porcupine păstrat doar ca fallback (nu se folosește când engine=openwakeword)
-porcupine:
-  access_key: "${PICOVOICE_ACCESS_KEY}"
-  keyword_paths:
-    - "/home/delia/Conversational_Robot/Conversational_Bot/voices/Hello-Robot_en_linux_v3_0_0.ppn"
+openwakeword:
+  inference_framework: "onnx"
+  sample_rate: 16000
+  wake_keyword: "hello_robot"
+  wake_lang: "en"
+  threshold: 0.55
+  cooldown_ms: 1200
   keywords:
-    - "porcupine"
-  sensitivities: [0.6]
+    hello_robot:
+      model_path: "voices/hello_robot.onnx"
+      threshold: 0.55

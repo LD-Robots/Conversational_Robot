@@ -32,3 +32,5 @@ rich==13.7.1
 #wake word
 pvporcupine==3.0.2
 python-dotenv==1.0.1
+openwakeword==0.6.0
+onnxruntime==1.18.1
