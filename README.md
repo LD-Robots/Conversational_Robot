@@ -46,7 +46,7 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
    Picovoice Porcupine for “hello robot”; if missing, text fallback is used.
 
 6. **Stop command (ASR or hotword)**  
-   By default `stop_hotword.engine: text` listens for “stop robot” even while TTS is speaking; only that fuzzy-matched phrase will barge the bot. If you prefer a wakeword model, swap to `openwakeword`/`porcupine` in `configs/core.yaml`.
+   By default we ship an OpenWakeWord model (`voices/stop_robot.onnx`) that barges TTS the moment you say “stop robot”. If you prefer ASR-only fallback, change `stop_hotword.engine` to `text` in `configs/core.yaml`.
 
 7. **Route audio correctly (AEC)** ➜ see **🔊 Audio routing (AEC) & pavucontrol** 
    TTS → `Echo-Cancel Sink`, Microphone → `Echo-Cancel Source`. Verify and adjust with pavucontrol.

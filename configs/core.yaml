@@ -21,9 +21,9 @@ fast_exit:
 
 stop_hotword:
   enabled: true
-  engine: text             # folosește transcript ASR
+  engine: openwakeword
+  model_path: "/home/delia/Conversational_Robot/Conversational_Bot/voices/stop_robot.onnx"
+  threshold: 0.55
+  min_gap_ms: 900
   label: "stop robot"
-  mode: "barge"            # barge = doar oprește TTS; exit = închide sesiunea
-  phrases:
-    - "stop robot"
-  fuzzy: 94
+  mode: "barge"
