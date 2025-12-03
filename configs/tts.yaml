@@ -7,6 +7,11 @@ min_chunk_chars: 45           # bucăți mai mici -> start TTS mai rapid
 prebuffer_chars: 80           # cât așteaptă înainte de primul chunk
 soft_max_chars: 120           # forțează flush dacă propoziția e prea lungă
 max_idle_ms: 180              # flush dacă LLM tace pentru atât (ms)
+backchannel:
+  enabled: true
+  delay_ms: 2000
+  phrase_en: "One moment..."
+  phrase_ro: "Un moment..."
 
 piper:
   exe: "/home/delia/Conversational_Robot/Conversational_Bot/.venv/bin/piper"     # verifică cu: which piper

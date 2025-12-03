@@ -5,6 +5,7 @@ import os
 import time
 import threading
 import signal
+import queue
 from rapidfuzz import fuzz
 from dotenv import load_dotenv, find_dotenv
 
@@ -373,6 +374,10 @@ def main():
                     debugger.write_asr(user_text)
 
                     reply_buf = []
+                    first_token_event = threading.Event()
+                    ttft_value = {"value": None}
+                    token_queue: "queue.Queue" = queue.Queue()
+                    queue_sentinel = object()
 
                     def _capture(gen):
                         # tee generatorul cu debugger.tee
@@ -400,7 +405,45 @@ def main():
                                 break
                             yield tok
 
-                    token_iter = _capture(_abort_guard(shaped))
+                    def _producer():
+                        try:
+                            first_local = True
+                            for tok in _capture(_abort_guard(shaped)):
+                                if first_local:
+                                    first_local = False
+                                    ttft_value["value"] = time.perf_counter() - rt_start
+                                    first_token_event.set()
+                                token_queue.put(tok)
+                        finally:
+                            token_queue.put(queue_sentinel)
+
+                    producer_th = threading.Thread(target=_producer, name="LLMTokenProducer", daemon=True)
+                    producer_th.start()
+
+                    def _queue_iter():
+                        while True:
+                            item = token_queue.get()
+                            if item is queue_sentinel:
+                                break
+                            yield item
+
+                    backchannel_cfg = tts_cfg.get("backchannel") or {}
+                    backchannel_enabled = bool(backchannel_cfg.get("enabled", True))
+                    backchannel_delay = float(backchannel_cfg.get("delay_ms", 2000)) / 1000.0
+                    backchannel_phrase_en = backchannel_cfg.get("phrase_en") or "One moment..."
+                    backchannel_phrase_ro = backchannel_cfg.get("phrase_ro") or "Un moment..."
+                    if backchannel_enabled and backchannel_delay > 0.0:
+                        if not first_token_event.wait(backchannel_delay) and not fast_exit.pending():
+                            phrase = backchannel_phrase_ro if user_lang.startswith("ro") else backchannel_phrase_en
+                            logger.info("⌛ Backchannel: TTFT depășește %.1fs — redau filler.", backchannel_delay)
+                            try:
+                                tts.say(phrase, lang=user_lang)
+                            except Exception as exc:
+                                logger.warning(f"Backchannel TTS error: {exc}")
+                    token_iter = _queue_iter()
+                    if fast_exit.pending():
+                        logger.info("🔴 FastExit activ înainte de TTS — abandonez răspunsul curent.")
+                        break
 
                     def _mark_tts_start():
                         # round-trip metric

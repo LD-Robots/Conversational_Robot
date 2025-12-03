@@ -41,7 +41,7 @@ stop_keyword:
   debug: false
 
 cobra:
-  enabled: true
+  enabled: false
   threshold: 0.65                 # 1.0 = foarte strict; scade doar dacă îți taie voce reală
 
   hold_ms: 240

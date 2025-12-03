@@ -9,6 +9,7 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 * **Wake word with safe fallback** — Porcupine hotword; if it’s missing or fails, the app switches to **text-based wake matching** without crashing.
 * **ASR with clean endpointing** — Faster-Whisper tuned for short turns; **standby** listens in tight windows; **active sessions** auto-detect RO/EN (standby favors EN for reliable hotwords).
 * **Streaming LLM → streaming TTS** — Real-time token streaming to speech; **time-to-first-token (TTFT)** is measured so replies feel snappy.
+* **Latency backchannel** — dacă TTFT depășește ~2s, botul redă „One moment…” / „Un moment…” ca să știi că lucrează.
 * **Audio hygiene** — System echo-cancel (AEC), noise suppression, high-pass filter; **AGC off** to avoid noise pumping & false VAD triggers.
 * **PyTorch stop keyword** — custom ONNX model (`audio.stop_keyword`) monitors the mic only while TTS talks and instantly cuts playback when you say “stop robot”.
 * **No accidental “pa…” exits** — Session closes **only** on exact goodbyes (e.g., “ok bye”, “gata”, “la revedere”).
@@ -47,6 +48,14 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 
 6. **Stop command (PyTorch detector)** 
    `audio.stop_keyword` loads `voices/stop_keyword.onnx` (other vs stop classes) and runs only while TTS is speaking. Tune `logit_margin`, `prob_threshold`, or `hits_required` if you need stricter detection.
+   Ajustează `tts.backchannel.delay_ms/phrase_*` dacă vrei să schimbi filler-ul „One moment…” care acoperă latențele mari la TTFT.
+
+### Backchannel (TTFT filler)
+
+- Configure it in `configs/tts.yaml` (`backchannel.enabled`, `delay_ms`, `phrase_en`, `phrase_ro`).
+- In `src/app.py` we track TTFT with a `threading.Event`; if no token arrives within the threshold we play `tts.say("One moment...")` (or “Un moment…” for Romanian) before streaming the real reply.
+- The backchannel respects FastExit and stop signals, so it never fights barge-in or manual cancels.
+- This hides long LLM latencies (e.g., large models on CPU) without altering the rest of the speech pipeline.
 
 7. **Route audio correctly (AEC)** ➜ see **🔊 Audio routing (AEC) & pavucontrol** 
    TTS → `Echo-Cancel Sink`, Microphone → `Echo-Cancel Source`. Verify and adjust with pavucontrol.
