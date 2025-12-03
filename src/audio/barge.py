@@ -176,6 +176,16 @@ class BargeInListener:
         self.debug_meter = bool(cfg_audio.get("barge_debug_meter", False))
         self._debug_interval_ms = int(cfg_audio.get("barge_debug_interval_ms", 120))
         self._last_meter_ms: int = 0
+        self.stop_detector = None
+        stop_kw_cfg = cfg_audio.get("stop_keyword") or {}
+        if stop_kw_cfg.get("enabled"):
+            try:
+                from .stop_keyword_detector import StopKeywordDetector
+
+                self.stop_detector = StopKeywordDetector(stop_kw_cfg, self.sr, logger)
+            except Exception as exc:
+                self.stop_detector = None
+                self.log.warning(f"Stop keyword detector dezactivat: {exc}")
 
         self.log.info(f"🎯 Barge-in inteligent: min_voice={self.min_voice_ms}ms, "
                       f"rms_thr={self.min_rms_dbfs}dB, hp={self.highpass_hz}Hz, "
@@ -399,6 +409,20 @@ class BargeInListener:
 
             pcm = np.clip(block[:, 0], -1, 1)
             pcm_i16 = (pcm * 32767.0).astype(np.int16)
+
+            if self.stop_detector:
+                stop_detection = self.stop_detector.process_block(pcm_i16)
+                if stop_detection:
+                    now_stop = int(time.monotonic() * 1000)
+                    self._last_trigger_ms = now_stop
+                    self._last_user_voice_ms = now_stop
+                    self._voiced_ms = 0
+                    other_logit, stop_logit = stop_detection.logits
+                    self.log.info(
+                        f"🛑 Stop keyword detectat (p_stop={stop_detection.probability:.2f}, "
+                        f"logits other={other_logit:.2f} stop={stop_logit:.2f})"
+                    )
+                    return True
 
             # Verifică dacă e voce umană (nu zgomot/eco)
             if self._is_human_voice(pcm_i16):

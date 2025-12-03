@@ -10,7 +10,7 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 * **ASR with clean endpointing** — Faster-Whisper tuned for short turns; **standby** listens in tight windows; **active sessions** auto-detect RO/EN (standby favors EN for reliable hotwords).
 * **Streaming LLM → streaming TTS** — Real-time token streaming to speech; **time-to-first-token (TTFT)** is measured so replies feel snappy.
 * **Audio hygiene** — System echo-cancel (AEC), noise suppression, high-pass filter; **AGC off** to avoid noise pumping & false VAD triggers.
-* **Stop command flexibility** — Use the built-in ASR (“stop robot”) or an OpenWakeWord model to cut TTS instantly; no Picovoice keys required.
+* **Picovoice stop hotword** — `fast_exit.picovoice` + `PORCUPINE_STOP_PPN` for an offline “stop now” keyword that cuts sessions instantly (ASR “ok bye/gata” stays as fallback).
 * **No accidental “pa…” exits** — Session closes **only** on exact goodbyes (e.g., “ok bye”, “gata”, “la revedere”).
 * **Observability** — Prometheus counters + a simple `/vitals` page for round-trip, ASR, TTFT, sessions, turns, errors.
 * **Double buffer for seamless TTS** — Prevents micro-pauses when the bot speaks; while buffer A plays, buffer B synthesizes the next chunk, then they alternate continuously.
@@ -22,7 +22,7 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 
 ## 🔧 Practical setup for users (do this)
 
-1. **Select the echo-cancelled mic**  
+1. **Select the echo-cancelled mic** 
    Use the `ec_mic` input (see **Linux audio** + **Audio routing** below).
 
 2. **Tune thresholds for your room**
@@ -45,8 +45,8 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 5. **(Optional) Wake Hotword** 
    Picovoice Porcupine for “hello robot”; if missing, text fallback is used.
 
-6. **Stop command (ASR or hotword)**  
-   By default we ship an OpenWakeWord model (`voices/stop_robot.onnx`) that barges TTS the moment you say “stop robot”. If you prefer ASR-only fallback, change `stop_hotword.engine` to `text` in `configs/core.yaml`.
+6. **Stop command (ASR or hotword)** 
+   By default `stop_hotword.engine: text` listens for “stop robot” even while TTS is speaking; only that fuzzy-matched phrase will barge the bot. If you prefer a wakeword model, swap to `openwakeword`/`porcupine` in `configs/core.yaml`.
 
 7. **Route audio correctly (AEC)** ➜ see **🔊 Audio routing (AEC) & pavucontrol** 
    TTS → `Echo-Cancel Sink`, Microphone → `Echo-Cancel Source`. Verify and adjust with pavucontrol.
