@@ -51,6 +51,25 @@ def _lang_from_code(code: str) -> str:
     return "en"
 
 
+def _detect_response_lang(text: str) -> str:
+    """Detectează limba răspunsului pe baza caracterelor românești."""
+    if not text:
+        return "en"
+    # Caractere specifice românei
+    ro_chars = set("ăâîșțĂÂÎȘȚ")
+    ro_count = sum(1 for c in text if c in ro_chars)
+    # Dacă are caractere românești, e română
+    if ro_count >= 2:
+        return "ro"
+    # Verifică și cuvinte comune românești
+    ro_words = ["este", "pentru", "care", "sunt", "acest", "aceasta", "poate", "doar", "foarte"]
+    text_lower = text.lower()
+    ro_word_count = sum(1 for w in ro_words if w in text_lower)
+    if ro_word_count >= 2:
+        return "ro"
+    return "en"
+
+
 def _normalize_phrase(value: str) -> str:
     try:
         return normalize_text(value or "").lower().strip()
@@ -461,11 +480,33 @@ def main():
                         # debug hook
                         debugger.on_tts_start()
 
+                    # Pre-colectează primele tokeni pentru detectare limbă
+                    first_chunks = []
+                    collected_len = 0
+                    response_lang = user_lang  # default
+                    
+                    for tok in token_iter:
+                        first_chunks.append(tok)
+                        collected_len += len(tok)
+                        if collected_len >= 50:
+                            response_lang = _detect_response_lang("".join(first_chunks))
+                            logger.info(f"🌐 Limbă răspuns detectată: {response_lang}")
+                            break
+                    
+                    # Iterator care prima dată yield-ează chunks colectate, apoi restul
+                    def _prepend_chunks(collected, remaining):
+                        for c in collected:
+                            yield c
+                        for tok in remaining:
+                            yield tok
+                    
+                    final_token_iter = _prepend_chunks(first_chunks, token_iter)
+
                     state = BotState.SPEAKING
                     tts_speak_calls.inc()
                     tts.say_async_stream(
-                        token_iter,
-                        lang=user_lang,
+                        final_token_iter,
+                        lang=response_lang,
                         on_first_speak=_mark_tts_start,
                         min_chunk_chars=min_chunk_chars,
                     )
