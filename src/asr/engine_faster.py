@@ -2,6 +2,9 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
+import os, tempfile, time
+import numpy as np
+import soundfile as sf
 from faster_whisper import WhisperModel
 
 from src.telemetry.metrics import observe_hist, asr_latency
@@ -15,10 +18,16 @@ class ASREngine:
         force_language: Optional[str] = None,
         beam_size: int = 1,
         vad_min_silence_ms: int = 300,
+        warmup_enabled: bool = True,
+        logger=None,
     ):
         self.force_language = (force_language or "").strip().lower() or None
         self.beam_size = int(beam_size or 1)
         self.vad_min_silence_ms = int(vad_min_silence_ms or 300)
+        self.warmup_enabled = warmup_enabled
+        self.log = logger
+        self._warmed_up = False
+        
         self.model = WhisperModel(
             model_size,
             device=device,
@@ -27,6 +36,42 @@ class ASREngine:
         )
         print(f"[ASR] faster-whisper model={model_size} device={device} compute_type={compute_type} "
               f"force_language={self.force_language} vad_min_silence_ms={self.vad_min_silence_ms}")
+        
+        # Warm-up la boot
+        self._ensure_warm()
+
+    def _ensure_warm(self):
+        """Încarcă complet modelul prin transcriere dummy."""
+        if not self.warmup_enabled or self._warmed_up:
+            return
+        try:
+            if self.log:
+                self.log.info("🔥 ASR warm-up start")
+            start = time.perf_counter()
+            
+            # Creează fișier audio scurt (0.5s tăcere)
+            fd, temp_path = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            try:
+                silence = np.zeros(8000, dtype=np.float32)  # 0.5s @ 16kHz
+                sf.write(temp_path, silence, 16000)
+                
+                # Transcriere dummy
+                self.model.transcribe(temp_path, language="en", beam_size=1)
+            finally:
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+            
+            elapsed = time.perf_counter() - start
+            self._warmed_up = True
+            if self.log:
+                self.log.info(f"✅ ASR warm-up gata ({elapsed:.2f}s)")
+        except Exception as e:
+            if self.log:
+                self.log.warning(f"ASR warm-up eșuat: {e}")
+
 
     # ---- helper intern
     def _run_once(self, wav_path: str | Path, language: Optional[str], use_vad: bool) -> Tuple[str, str, float, float]:

@@ -15,6 +15,8 @@ def make_asr(cfg_asr: dict, logger=None):
             force_language=cfg_asr.get("force_language"),
             beam_size=int(cfg_asr.get("beam_size", 1)),
             vad_min_silence_ms=int(cfg_asr.get("vad_min_silence_ms", 300)),
+            warmup_enabled=bool(cfg_asr.get("warmup_enabled", True)),
+            logger=logger,
         )
     elif provider == "openai":
         from .engine_openai import ASREngine

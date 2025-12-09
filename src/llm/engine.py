@@ -1,6 +1,6 @@
 # src/llm/engine.py
 from __future__ import annotations
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import os, requests, json, time
 from src.telemetry.metrics import observe_hist, llm_latency, llm_first_token_latency, wrap_stream_for_first_token
 
@@ -16,12 +16,22 @@ class LLMLocal:
 
         self.system = self.cfg.get("system_prompt", "")
         self.host = self.cfg.get("host", "http://localhost:11434")
-        self.model = self.cfg.get("model", "llama3.2")
+        self.model = self.cfg.get("model", "qwen2.5:3b")
         self.max_tokens = int(self.cfg.get("max_tokens", 120))
         self.temperature = float(self.cfg.get("temperature", 0.4))
 
         self.default_mode = (self.cfg.get("default_mode") or "precise").lower()
         self.strict_facts = bool(self.cfg.get("strict_facts", True))
+
+        # Warm-up config
+        self.warmup_enabled = bool(self.cfg.get("warmup_enabled", True))
+        self.warmup_text = (self.cfg.get("warmup_text") or "Hello").strip()
+        self.warmup_lang = (self.cfg.get("warmup_lang") or "en").lower()
+        self._warmed_up = False
+
+        # History config
+        self.history_enabled = bool(self.cfg.get("history_enabled", True))
+        self.max_history_turns = int(self.cfg.get("max_history_turns", 5))
 
         self._openai = None
         if self.provider == "openai":
@@ -33,6 +43,34 @@ class LLMLocal:
                 self.provider = "rule"
 
         self.log.info(f"LLM provider activ: {self.provider}")
+        
+        # Warm-up la boot
+        self._ensure_warm()
+
+    def _ensure_warm(self):
+        """Încarcă modelul în RAM prin request dummy."""
+        if not self.warmup_enabled or self._warmed_up:
+            return
+        if self.provider != "ollama":
+            self._warmed_up = True
+            return
+        try:
+            self.log.info(f"🔥 LLM warm-up start (model={self.model})")
+            start = time.perf_counter()
+            # Request simplu, fără a folosi răspunsul
+            url = f"{self.host.rstrip('/')}/api/generate"
+            resp = requests.post(url, json={
+                "model": self.model,
+                "prompt": self.warmup_text,
+                "stream": False,
+                "options": {"num_predict": 5}  # răspuns scurt
+            }, timeout=60)
+            resp.raise_for_status()
+            elapsed = time.perf_counter() - start
+            self._warmed_up = True
+            self.log.info(f"✅ LLM warm-up gata ({elapsed:.2f}s)")
+        except Exception as e:
+            self.log.warning(f"LLM warm-up eșuat: {e}")
 
     def generate(self, user_text: str, lang_hint: str = "en", mode: Optional[str] = None) -> str:
         mode = (mode or self.default_mode).lower()
@@ -45,10 +83,11 @@ class LLMLocal:
                 return self._openai_chat(user_text, lang_hint)
             return "No LLM provider configured."
 
-    def generate_stream(self, user_text: str, lang_hint: str = "en", mode: Optional[str] = None):
+    def generate_stream(self, user_text: str, lang_hint: str = "en", mode: Optional[str] = None, history: Optional[List[Dict]] = None):
+        """Generează răspuns cu streaming. history = [{"role": "user"/"assistant", "content": ...}, ...]"""
         mode = (mode or self.default_mode).lower()
         if self.provider == "ollama":
-            gen = self._ollama_stream(user_text, lang_hint, mode)
+            gen = self._ollama_stream(user_text, lang_hint, mode, history)
             return wrap_stream_for_first_token(gen, llm_first_token_latency)
         def _one():
             yield self.generate(user_text, lang_hint, mode)
@@ -104,8 +143,8 @@ class LLMLocal:
             self.log.error(f"Ollama HTTP error: {e}")
             return self._rule_based(user_text, lang_hint)
 
-    def _ollama_stream(self, user_text: str, lang_hint: str, mode: str = "precise"):
-        unknown_en = "That’s outside my current knowledge, but I’ll note it for improvement."
+    def _ollama_stream(self, user_text: str, lang_hint: str, mode: str = "precise", history: Optional[List[Dict]] = None):
+        unknown_en = "That's outside my current knowledge, but I'll note it for improvement."
         unknown_ro = "Interesant, Nu am răspunsul încă, dar exact întrebări ca asta mă ajută să devin mai bun."
         unknown = unknown_ro if str(lang_hint).lower().startswith("ro") else unknown_en
 
@@ -123,7 +162,25 @@ class LLMLocal:
             temperature = self.temperature; top_p = 0.95; top_k = 50
 
         sys = (self.system or "").strip()
-        prompt = f"{sys}\n{safety}\nUser ({lang_hint}): {user_text}\nAssistant:"
+        
+        # Formatează history în prompt
+        history_text = ""
+        if self.history_enabled and history:
+            # Limitează la max_history_turns
+            limited = history[-(self.max_history_turns * 2):]
+            for msg in limited:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "user":
+                    history_text += f"User: {content}\n"
+                elif role == "assistant":
+                    history_text += f"Assistant: {content}\n"
+        
+        # Construiește prompt-ul final
+        if history_text:
+            prompt = f"{sys}\n{safety}\n\n{history_text}User: {user_text}\nAssistant:"
+        else:
+            prompt = f"{sys}\n{safety}\nUser ({lang_hint}): {user_text}\nAssistant:"
 
         start = time.perf_counter()
         with requests.post(url, json={

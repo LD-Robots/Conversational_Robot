@@ -7,6 +7,15 @@ language_policy: auto
 default_mode: precise         
 strict_facts: false  #daca nu stie spune ca nu stie 
 
+# Warm-up: incarca modelul in RAM la boot
+warmup_enabled: true
+warmup_text: "Hello"
+warmup_lang: "en"
+
+# Conversation history: tine minte contextul in sesiune
+history_enabled: true
+max_history_turns: 5  # cate perechi user/assistant sa tina
+
 system_prompt: |-
   You are a friendly bilingual (Romanian/English) assistant for a local voice-controlled robot.
 

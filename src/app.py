@@ -267,9 +267,11 @@ def main():
                 heard_lang = "ro" if any(matched_norm == rp for rp in ro_phrases) else "en"
 
             # —— Wake confirm ——
-            ack = ack_ro if heard_lang == "ro" else ack_en
+            ack_key = "ack_ro" if heard_lang == "ro" else "ack_en"
             tts_speak_calls.inc()
-            tts.say(ack, lang=heard_lang)
+            if not tts.say_cached(ack_key, lang=heard_lang):
+                ack = ack_ro if heard_lang == "ro" else ack_en
+                tts.say(ack, lang=heard_lang)
 
             # —— SESIUNE MULTI-TURN ——
             ask_cfg = dict(cfg["audio"])
@@ -293,6 +295,9 @@ def main():
             session_idle_seconds = int(cfg["audio"].get("session_idle_seconds", 12))
             last_activity = time.time()
             goodbye_listener = None
+            
+            # Conversation history pentru sesiunea curentă
+            conversation_history = []
 
             if use_fast_exit_hotword and fast_exit_listener_cfg:
                 def _goodbye_cb(_label: str, *_a):
@@ -385,7 +390,10 @@ def main():
                             reply_buf.append(tok)
                             yield tok
 
-                    token_iter_raw = llm.generate_stream(user_text, lang_hint=user_lang, mode="precise")
+                    # Adaugă mesajul user în history
+                    conversation_history.append({"role": "user", "content": user_text})
+                    
+                    token_iter_raw = llm.generate_stream(user_text, lang_hint=user_lang, mode="precise", history=conversation_history[:-1])
 
                     # netezește streamul în fraze stabile:
                     tts_cfg = cfg["tts"]
@@ -434,10 +442,12 @@ def main():
                     backchannel_phrase_ro = backchannel_cfg.get("phrase_ro") or "Un moment..."
                     if backchannel_enabled and backchannel_delay > 0.0:
                         if not first_token_event.wait(backchannel_delay) and not fast_exit.pending():
-                            phrase = backchannel_phrase_ro if user_lang.startswith("ro") else backchannel_phrase_en
+                            filler_key = "filler_ro" if user_lang.startswith("ro") else "filler_en"
                             logger.info("⌛ Backchannel: TTFT depășește %.1fs — redau filler.", backchannel_delay)
                             try:
-                                tts.say(phrase, lang=user_lang)
+                                if not tts.say_cached(filler_key, lang=user_lang):
+                                    phrase = backchannel_phrase_ro if user_lang.startswith("ro") else backchannel_phrase_en
+                                    tts.say(phrase, lang=user_lang)
                             except Exception as exc:
                                 logger.warning(f"Backchannel TTS error: {exc}")
                     token_iter = _queue_iter()
@@ -493,6 +503,11 @@ def main():
                     # finalizează logurile
                     debugger.on_tts_end()
                     last_bot_reply = "".join(reply_buf)
+                    
+                    # Adaugă răspunsul bot în history
+                    if last_bot_reply.strip():
+                        conversation_history.append({"role": "assistant", "content": last_bot_reply})
+                    
                     debugger.finish()
                     if fast_exit.pending():
                         logger.info("🔴 FastExit: sesiune închisă (revenire în standby).")

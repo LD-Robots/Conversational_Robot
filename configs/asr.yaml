@@ -5,3 +5,6 @@ device: cpu                 # cpu | cuda
 beam_size: 1
 force_language:             # ex: en/ro, sau gol pentru auto
 vad_min_silence_ms: 300     # VAD intern (faster-whisper) – endpointing mai „snappy”
+
+# Warm-up: ruleaza o transcriere dummy la boot
+warmup_enabled: true

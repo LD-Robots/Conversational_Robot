@@ -155,6 +155,13 @@ class _PiperCmdTTS:
         self.warmup_text = (self.p.get("warmup_text") or "").strip()
         self.warmup_lang = (self.p.get("warmup_lang") or "en").lower()
 
+        # Cache config
+        cache_cfg = self.cfg.get("cache") or {}
+        self.cache_enabled = bool(cache_cfg.get("enabled", False))
+        self.cache_dir = cache_cfg.get("dir") or "voices/cache"
+        self.cache_phrases = cache_cfg.get("phrases") or {}
+        self._cache: Dict[str, str] = {}  # key -> wav_path
+
         # Control
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -173,6 +180,7 @@ class _PiperCmdTTS:
         if not self.exe or not os.path.exists(self.exe):
             raise RuntimeError("Piper executable not found. Set tts.piper.exe or install piper-tts.")
         self._ensure_warm()
+        self._precache()
 
     def is_speaking(self) -> bool:
         return self._speaking.is_set()
@@ -212,6 +220,54 @@ class _PiperCmdTTS:
                 self.log.info("✅ Piper warm-up gata")
             except Exception as e:
                 self.log.warning(f"Piper warm-up eșuat: {e}")
+
+    def _precache(self):
+        """Pre-generează WAV-uri pentru frazele comune."""
+        if not self.cache_enabled or not self.cache_phrases:
+            return
+        
+        # Creează directorul cache
+        cache_path = os.path.join(os.getcwd(), self.cache_dir)
+        os.makedirs(cache_path, exist_ok=True)
+        
+        generated = []
+        for key, text in self.cache_phrases.items():
+            if not text:
+                continue
+            # Extrage limba din cheie (ex: ack_en -> en, filler_ro -> ro)
+            lang = "ro" if key.endswith("_ro") else "en"
+            wav_path = os.path.join(cache_path, f"{key}.wav")
+            
+            # Generează doar dacă nu există deja
+            if not os.path.exists(wav_path):
+                try:
+                    temp_wav = self._synth_to_wav(text, lang)
+                    shutil.move(temp_wav, wav_path)
+                    generated.append(key)
+                except Exception as e:
+                    self.log.warning(f"Cache {key} eșuat: {e}")
+                    continue
+            
+            self._cache[key] = wav_path
+        
+        if generated:
+            self.log.info(f"📦 TTS cache: generat {', '.join(generated)}")
+        if self._cache:
+            self.log.info(f"📦 TTS cache: {len(self._cache)} fraze disponibile")
+
+    def say_cached(self, key: str, lang: str = "en") -> bool:
+        """Redă un WAV din cache. Returnează True dacă a găsit, False altfel."""
+        wav_path = self._cache.get(key)
+        if wav_path and os.path.exists(wav_path):
+            tts_speak_calls.inc()
+            self._speaking.set()
+            try:
+                self.log.info(f"🔊 TTS cache play: {key}")
+                self._play_wav(wav_path)
+            finally:
+                self._speaking.clear()
+            return True
+        return False
 
     def _synth_to_wav(self, text: str, lang: str) -> str:
         model, cfg = self._pick_model(lang)
@@ -513,6 +569,12 @@ class TTSLocal:
         on_done: Optional[Callable[[], None]] = None,
     ):
         return self.impl.say_async_stream(token_iter, lang, on_first_speak, min_chunk_chars, on_done)
+
+    def say_cached(self, key: str, lang: str = "en") -> bool:
+        """Redă un WAV din cache. Returnează True dacă a reușit."""
+        if hasattr(self.impl, "say_cached"):
+            return self.impl.say_cached(key, lang)
+        return False
 
     def stop(self):
         return self.impl.stop()

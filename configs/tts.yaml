@@ -27,3 +27,13 @@ piper:
   warmup_enabled: true
   warmup_text: "Hello! Testing audio pipeline."
   warmup_lang: "en"
+
+# Pre-cache: fraze comune pre-generate la boot
+cache:
+  enabled: true
+  dir: "voices/cache"
+  phrases:
+    ack_en: "Yes, I'm listening."
+    ack_ro: "Da, te ascult."
+    filler_en: "One moment..."
+    filler_ro: "Un moment..."
