@@ -480,27 +480,12 @@ def main():
                         # debug hook
                         debugger.on_tts_start()
 
-                    # Pre-colectează primele tokeni pentru detectare limbă
-                    first_chunks = []
-                    collected_len = 0
-                    response_lang = user_lang  # default
+                    # Folosim direct limba userului pentru TTS (nu detectăm din răspuns)
+                    # Așa TTS va vorbi în română când userul întreabă în română
+                    response_lang = user_lang
+                    logger.info(f"🌐 TTS va folosi limba input-ului: {response_lang}")
                     
-                    for tok in token_iter:
-                        first_chunks.append(tok)
-                        collected_len += len(tok)
-                        if collected_len >= 50:
-                            response_lang = _detect_response_lang("".join(first_chunks))
-                            logger.info(f"🌐 Limbă răspuns detectată: {response_lang}")
-                            break
-                    
-                    # Iterator care prima dată yield-ează chunks colectate, apoi restul
-                    def _prepend_chunks(collected, remaining):
-                        for c in collected:
-                            yield c
-                        for tok in remaining:
-                            yield tok
-                    
-                    final_token_iter = _prepend_chunks(first_chunks, token_iter)
+                    final_token_iter = token_iter
 
                     state = BotState.SPEAKING
                     tts_speak_calls.inc()
@@ -510,6 +495,7 @@ def main():
                         on_first_speak=_mark_tts_start,
                         min_chunk_chars=min_chunk_chars,
                     )
+
 
                     # BARGE-IN în timpul TTS (protejată anti-eco și cu arm-delay)
                     if not bool(cfg["audio"].get("barge_enabled", True)):

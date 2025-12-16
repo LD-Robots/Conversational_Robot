@@ -35,8 +35,9 @@ barge_cobra_relax_db: 0.0           # relaxează pragul RMS doar dacă Cobra con
 stop_keyword:
   enabled: true
   model_path: "voices/stop_keyword.onnx"
-  logit_margin: 0.5
-  prob_threshold: 0.9
+  logit_margin: 1.2        # era 0.5 - acum necesită diferență mai mare între "stop" și "other"
+  prob_threshold: 0.85     # era 0.6 - acum necesită probabilitate mai mare
+
   hits_required: 1
   debug: false
 
