@@ -9,7 +9,7 @@ session_idle_seconds: 12
 min_valid_seconds: 1.1
 
 # ——— BARGE-IN INTELIGENT (filtrează eco + zgomot, păstrează doar vocea reală) ———
-barge_enabled: true
+barge_enabled: false
 barge_allow_during_tts: true        # dezactivat: TTS se oprește doar pe comanda „stop" (stop keyword detector)
 barge_voice_hold_ms: 320
 barge_debug_meter: false #false
