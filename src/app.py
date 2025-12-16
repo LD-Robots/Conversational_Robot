@@ -498,34 +498,27 @@ def main():
 
 
                     # BARGE-IN în timpul TTS (protejată anti-eco și cu arm-delay)
-                    if not bool(cfg["audio"].get("barge_enabled", True)):
+                    # Stop keyword detector rulează ÎNTOTDEAUNA, barge-in pe voce e opțional
+                    barge = BargeInListener(cfg["audio"], logger)
+                    fast_exit.barge = barge
+                    barge_on_voice = bool(cfg["audio"].get("barge_enabled", False)) and bool(cfg["audio"].get("barge_allow_during_tts", True))
+                    try:
                         while tts.is_speaking():
                             if fast_exit.pending():
                                 tts.stop()
                                 break
-                            time.sleep(0.05)
-                    elif not bool(cfg["audio"].get("barge_allow_during_tts", True)):
-                        while tts.is_speaking():
-                            if fast_exit.pending():
-                                tts.stop()
-                                break
-                            time.sleep(0.05)
-                    else:
-                        barge = BargeInListener(cfg["audio"], logger)
-                        fast_exit.barge = barge  # permite FastExit să verifice că vorbește userul, nu eco TTS
-                        try:
-                            while tts.is_speaking():
-                                if fast_exit.pending():
-                                    tts.stop()
-                                    break
-                                need = int(cfg["audio"].get("barge_min_voice_ms", 650))
-                                if barge.heard_speech(need_ms=need):
+                            # heard_speech verifică intern stop_detector și returnează True dacă a detectat "stop"
+                            need = int(cfg["audio"].get("barge_min_voice_ms", 650))
+                            detected = barge.heard_speech(need_ms=need)
+                            if detected:
+                                # Stop keyword sau voce detectată
+                                if barge_on_voice:
                                     logger.info("⛔ Barge-in detectat — opresc TTS și trec la listening.")
-                                    tts.stop()
-                                    break
-                                time.sleep(0.03)
-                        finally:
-                            barge.close()
+                                tts.stop()
+                                break
+                            time.sleep(0.03)
+                    finally:
+                        barge.close()
 
                     # finalizează logurile
                     debugger.on_tts_end()
