@@ -10,7 +10,7 @@ min_valid_seconds: 1.1
 
 # ——— BARGE-IN INTELIGENT (filtrează eco + zgomot, păstrează doar vocea reală) ———
 barge_enabled: true
-barge_allow_during_tts: true        # dezactivat: TTS se oprește doar pe comanda „stop” (FastExit/Picovoice)
+barge_allow_during_tts: true        # dezactivat: TTS se oprește doar pe comanda „stop" (stop keyword detector)
 barge_voice_hold_ms: 320
 barge_debug_meter: false #false
 barge_debug_interval_ms: 120
@@ -29,24 +29,15 @@ barge_cooldown_ms: 1000             # cât timp rămâne „latent” după un b
 barge_arm_after_ms: 1100            # așteaptă atât după startul TTS înainte să re-armă
 barge_leak_margin_db: 10.0          # prag = nivel_echo + 10 dB; crește dacă boxele sunt foarte tari
 barge_leak_decay_ms: 1800           # cât timp păstrează nivelul eco-ului recent măsurat
-barge_require_cobra: true           # cere confirmare Cobra pentru barge-in (anti-eco)
-barge_cobra_relax_db: 0.0           # relaxează pragul RMS doar dacă Cobra confirmă voce
 
 stop_keyword:
   enabled: true
   model_path: "voices/stop_keyword.onnx"
   logit_margin: 1.2        # era 0.5 - acum necesită diferență mai mare între "stop" și "other"
   prob_threshold: 0.85     # era 0.6 - acum necesită probabilitate mai mare
-
   hits_required: 1
   debug: false
 
-cobra:
-  enabled: false
-  threshold: 0.65                 # 1.0 = foarte strict; scade doar dacă îți taie voce reală
-
-  hold_ms: 240
-  access_key: "${PICOVOICE_ACCESS_KEY}"
 
 # ——— Text-based stop (ASR) ———
 stop_text_min_voice_ms: 80
