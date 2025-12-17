@@ -102,12 +102,4 @@ Dashboard disponibil la `http://localhost:9108/vitals`:
 - Erori
 
 ---
-
-## 🎬 Demo Flow Recomandat
-
-1. **"Hello robot"** → Activare
-2. **"Ce faci?"** → Răspuns în română
-3. **"What's the capital of France?"** → Răspuns în engleză
-4. **"And Germany?"** → Follow-up (conversation history)
-5. **"Stop robot"** → Oprește vorbirea
-6. **"Goodbye robot"** → Închide sesiunea
+jklkjhgfdsa

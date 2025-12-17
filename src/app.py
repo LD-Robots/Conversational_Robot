@@ -320,7 +320,23 @@ def main():
 
             if use_fast_exit_hotword and fast_exit_listener_cfg:
                 def _goodbye_cb(_label: str, *_a):
-                    logger.info("🔴 Goodbye hotword detectat — FastExit.")
+                    logger.info("🔴 Goodbye hotword detectat — redau mesaj de la revedere.")
+                    # Oprește TTS-ul curent dacă vorbește
+                    try:
+                        tts.stop()
+                    except Exception:
+                        pass
+                    # Redă mesajul de goodbye
+                    try:
+                        if not tts.say_cached("goodbye_en", lang="en"):
+                            tts.say("Goodbye! Have a great day!", lang="en")
+                        # Așteaptă să termine de vorbit
+                        import time as _time
+                        while tts.is_speaking():
+                            _time.sleep(0.05)
+                    except Exception as e:
+                        logger.warning(f"Goodbye TTS error: {e}")
+                    # Acum trigger exit
                     fast_exit.trigger_exit("goodbye-hotword")
                 try:
                     goodbye_listener = OpenWakeWordListener(

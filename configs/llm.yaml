@@ -1,6 +1,6 @@
 provider: ollama
 host: "http://127.0.0.1:11434"
-model: "qwen2.5:3b"
+model: "llama3.2"
 max_tokens: 120
 temperature: 0.4
 language_policy: auto
