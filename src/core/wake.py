@@ -26,49 +26,19 @@ class _FuzzyWake:
 
 class WakeDetector:
     """
-    Facade peste mai multe motoare:
-      - engine = 'asr'       -> fuzzy match pe text (ce aveai deja)
-      - engine = 'porcupine' -> KWS offline, direct pe WAV (fără ASR)
+    Fuzzy text matching pentru wake word detection.
+    Folosește ASR + potrivire text pentru a detecta fraze de trezire.
     """
     def __init__(self, cfg: Dict[str, Any], logger=None):
         self.cfg = cfg or {}
         self.log = logger
-        self.engine = (self.cfg.get("engine") or "asr").lower()
         self.fuzzy = _FuzzyWake(self.cfg.get("wake_phrases") or [], threshold=int(self.cfg.get("threshold", 72)))
-        self.porc = None
 
-        if self.engine == "porcupine":
-            try:
-                from src.wake.porcupine_engine import PorcupineWake
-                pcfg = self.cfg.get("porcupine") or {}
-                self.porc = PorcupineWake(
-                    access_key=pcfg.get("access_key", ""),
-                    keyword_paths=pcfg.get("keyword_paths"),
-                    keywords=pcfg.get("keywords"),
-                    sensitivities=pcfg.get("sensitivities"),
-                    logger=logger,
-                )
-            except Exception as e:
-                if logger: logger.error(f"Porcupine indisponibil: {e}. Revin pe engine=asr.")
-                self.engine = "asr"
-                self.porc = None
-
-    # pentru engine=asr
     def match(self, user_text: str) -> Optional[str]:
         return self.fuzzy.match(user_text)
 
     def debug_scores(self, user_text: str):
         return self.fuzzy.debug_scores(user_text)
 
-    # pentru engine=porcupine
-    def detect_in_wav(self, wav_path: str) -> Optional[str]:
-        if self.engine == "porcupine" and self.porc:
-            return self.porc.detect_in_wav(wav_path)
-        return None
-
     def close(self):
-        try:
-            if self.porc:
-                self.porc.close()
-        except Exception:
-            pass
+        pass

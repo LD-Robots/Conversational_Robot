@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Calibrare audio: redă un ton de test prin ec_speaker și înregistrează ec_mic
-pentru a estima leak-ul și energia joasă.
+pentru a estima leak-ul și pragul recomandat pentru barge-in.
 
 Exemplu:
     PULSE_SOURCE=ec_mic PULSE_SINK=ec_speaker python tools/calibrate_audio.py
@@ -20,6 +20,26 @@ def rms_db(vec: np.ndarray) -> float:
     rms = np.sqrt(np.mean(vec * vec) + 1e-12)
     return 20.0 * np.log10(rms + 1e-12)
 
+
+def normalize(vec: np.ndarray) -> np.ndarray | None:
+    vc = vec.astype(np.float32)
+    vc -= np.mean(vc)
+    norm = np.linalg.norm(vc)
+    if norm < 1e-8:
+        return None
+    return vc / norm
+
+
+def max_ncc(a: np.ndarray, b: np.ndarray) -> float:
+    n = 1
+    target_len = len(a) + len(b)
+    while n < target_len:
+        n <<= 1
+    fa = np.fft.rfft(a, n)
+    fb = np.fft.rfft(b, n)
+    corr = np.fft.irfft(fa * np.conjugate(fb), n)
+    corr = np.concatenate((corr[-len(b) + 1 :], corr[: len(a)]))
+    return float(np.max(np.abs(corr)) / len(a))
 
 
 def synth_signal(samples: int, sr: int) -> np.ndarray:
@@ -78,8 +98,6 @@ def main():
     leak_rms = rms_db(rec)
     sig_rms = rms_db(test_signal)
     leak_ratio = leak_rms - sig_rms
-
-
 
     fft = np.fft.rfft(rec * np.hanning(len(rec)))
     freqs = np.fft.rfftfreq(len(rec), 1.0 / sr)

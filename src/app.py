@@ -51,6 +51,25 @@ def _lang_from_code(code: str) -> str:
     return "en"
 
 
+def _detect_response_lang(text: str) -> str:
+    """Detectează limba răspunsului pe baza caracterelor românești."""
+    if not text:
+        return "en"
+    # Caractere specifice românei
+    ro_chars = set("ăâîșțĂÂÎȘȚ")
+    ro_count = sum(1 for c in text if c in ro_chars)
+    # Dacă are caractere românești, e română
+    if ro_count >= 2:
+        return "ro"
+    # Verifică și cuvinte comune românești
+    ro_words = ["este", "pentru", "care", "sunt", "acest", "aceasta", "poate", "doar", "foarte"]
+    text_lower = text.lower()
+    ro_word_count = sum(1 for w in ro_words if w in text_lower)
+    if ro_word_count >= 2:
+        return "ro"
+    return "en"
+
+
 def _normalize_phrase(value: str) -> str:
     try:
         return normalize_text(value or "").lower().strip()
@@ -301,7 +320,23 @@ def main():
 
             if use_fast_exit_hotword and fast_exit_listener_cfg:
                 def _goodbye_cb(_label: str, *_a):
-                    logger.info("🔴 Goodbye hotword detectat — FastExit.")
+                    logger.info("🔴 Goodbye hotword detectat — redau mesaj de la revedere.")
+                    # Oprește TTS-ul curent dacă vorbește
+                    try:
+                        tts.stop()
+                    except Exception:
+                        pass
+                    # Redă mesajul de goodbye
+                    try:
+                        if not tts.say_cached("goodbye_en", lang="en"):
+                            tts.say("Goodbye! Have a great day!", lang="en")
+                        # Așteaptă să termine de vorbit
+                        import time as _time
+                        while tts.is_speaking():
+                            _time.sleep(0.05)
+                    except Exception as e:
+                        logger.warning(f"Goodbye TTS error: {e}")
+                    # Acum trigger exit
                     fast_exit.trigger_exit("goodbye-hotword")
                 try:
                     goodbye_listener = OpenWakeWordListener(
@@ -461,44 +496,45 @@ def main():
                         # debug hook
                         debugger.on_tts_start()
 
+                    # Folosim direct limba userului pentru TTS (nu detectăm din răspuns)
+                    # Așa TTS va vorbi în română când userul întreabă în română
+                    response_lang = user_lang
+                    logger.info(f"🌐 TTS va folosi limba input-ului: {response_lang}")
+                    
+                    final_token_iter = token_iter
+
                     state = BotState.SPEAKING
                     tts_speak_calls.inc()
                     tts.say_async_stream(
-                        token_iter,
-                        lang=user_lang,
+                        final_token_iter,
+                        lang=response_lang,
                         on_first_speak=_mark_tts_start,
                         min_chunk_chars=min_chunk_chars,
                     )
 
+
                     # BARGE-IN în timpul TTS (protejată anti-eco și cu arm-delay)
-                    if not bool(cfg["audio"].get("barge_enabled", True)):
+                    # Stop keyword detector rulează ÎNTOTDEAUNA, barge-in pe voce e opțional
+                    barge = BargeInListener(cfg["audio"], logger)
+                    fast_exit.barge = barge
+                    barge_on_voice = bool(cfg["audio"].get("barge_enabled", False)) and bool(cfg["audio"].get("barge_allow_during_tts", True))
+                    try:
                         while tts.is_speaking():
                             if fast_exit.pending():
                                 tts.stop()
                                 break
-                            time.sleep(0.05)
-                    elif not bool(cfg["audio"].get("barge_allow_during_tts", True)):
-                        while tts.is_speaking():
-                            if fast_exit.pending():
-                                tts.stop()
-                                break
-                            time.sleep(0.05)
-                    else:
-                        barge = BargeInListener(cfg["audio"], logger)
-                        fast_exit.barge = barge  # permite FastExit să verifice că vorbește userul, nu eco TTS
-                        try:
-                            while tts.is_speaking():
-                                if fast_exit.pending():
-                                    tts.stop()
-                                    break
-                                need = int(cfg["audio"].get("barge_min_voice_ms", 650))
-                                if barge.heard_speech(need_ms=need):
+                            # heard_speech verifică intern stop_detector și returnează True dacă a detectat "stop"
+                            need = int(cfg["audio"].get("barge_min_voice_ms", 650))
+                            detected = barge.heard_speech(need_ms=need)
+                            if detected:
+                                # Stop keyword sau voce detectată
+                                if barge_on_voice:
                                     logger.info("⛔ Barge-in detectat — opresc TTS și trec la listening.")
-                                    tts.stop()
-                                    break
-                                time.sleep(0.03)
-                        finally:
-                            barge.close()
+                                tts.stop()
+                                break
+                            time.sleep(0.03)
+                    finally:
+                        barge.close()
 
                     # finalizează logurile
                     debugger.on_tts_end()

@@ -6,18 +6,28 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 
 ## ✨ What’s implemented (and how)
 
-* **Wake word with safe fallback** — Porcupine hotword; if it’s missing or fails, the app switches to **text-based wake matching** without crashing.
+* **Wake word with OpenWakeWord** — Uses the open-source OpenWakeWord engine with custom ONNX models for "hello robot" detection; falls back to text-based wake matching if needed.
 * **ASR with clean endpointing** — Faster-Whisper tuned for short turns; **standby** listens in tight windows; **active sessions** auto-detect RO/EN (standby favors EN for reliable hotwords).
 * **Streaming LLM → streaming TTS** — Real-time token streaming to speech; **time-to-first-token (TTFT)** is measured so replies feel snappy.
-* **Latency backchannel** — dacă TTFT depășește ~2s, botul redă „One moment…” / „Un moment…” ca să știi că lucrează.
+* **Latency backchannel** — If TTFT exceeds ~2s, the bot plays "One moment…" / "Un moment…" so you know it's working.
 * **Audio hygiene** — System echo-cancel (AEC), noise suppression, high-pass filter; **AGC off** to avoid noise pumping & false VAD triggers.
-* **PyTorch stop keyword** — custom ONNX model (`audio.stop_keyword`) monitors the mic only while TTS talks and instantly cuts playback when you say “stop robot”.
-* **No accidental “pa…” exits** — Session closes **only** on exact goodbyes (e.g., “ok bye”, “gata”, “la revedere”).
+* **PyTorch stop keyword** — custom ONNX model (`audio.stop_keyword`) monitors the mic only while TTS talks and instantly cuts playback when you say "stop robot".
+* **No accidental "pa…" exits** — Session closes **only** on exact goodbyes (e.g., "ok bye", "gata", "la revedere").
 * **Observability** — Prometheus counters + a simple `/vitals` page for round-trip, ASR, TTFT, sessions, turns, errors.
 * **Double buffer for seamless TTS** — Prevents micro-pauses when the bot speaks; while buffer A plays, buffer B synthesizes the next chunk, then they alternate continuously.
 * **English <> Romanian** — Improved command & QA flow in English while keeping full Romanian support.
 * **Honest fallback** — If the bot doesn’t know, it says so (“I’m not sure about that yet, but I can look it up if you’d like.”).
 * **Graceful CTRL+C shutdown** — One keystroke stops TTS, flushes buffers, dumps a metrics snapshot, and closes all background listeners.
+
+### 🚀 Performance Optimizations
+
+* **LLM Warm-up** — At boot, performs a dummy request to load the model into RAM, reducing first-query latency from ~6-10s to ~0.3-2s.
+* **ASR Warm-up** — Runs a silent dummy transcription at startup to fully load Faster-Whisper into memory, speeding up the first real transcription.
+* **TTS Pre-caching** — Pre-generates WAV files for common phrases (acknowledgements, fillers) at boot for zero-latency playback.
+* **Conversation History** — Maintains context throughout the session, allowing follow-up questions like "And Germany?" after asking about France.
+* **Fallback Responses** — Configurable error messages for timeout, connection errors, and empty responses instead of crashing.
+* **Sentiment Detection** — LLM adapts responses based on user's emotional state (frustrated, curious, confused).
+* **Proactive Suggestions** — Bot offers helpful follow-up suggestions when appropriate.
 
 ---
 
@@ -32,23 +42,38 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
    - Keep **AGC off** in the OS/driver and inside AEC if exposed.
 
 3. **Keys & env**
-   - Put secrets in `.env` (e.g., `PICOVOICE_ACCESS_KEY=...`).
+   - Put secrets in `.env` if needed.
    - Activating a venv **does not** read `.env`. Either:
      - use `python-dotenv` inside the app, **or**
      - `export $(grep -v '^#' .env | xargs)` before `python -m src.app`.
 
 4. **Run with structured logs**
-   ```bash
-   LOG_LEVEL=INFO LOG_DIR=logs python -m src.app
-   ```
-   Press **CTRL+C once** to exit cleanly — it stops TTS, flushes buffers, dumps a metrics snapshot, and closes all background listeners (no need for `pkill`).
+1.  **Select the echo-cancelled mic**
+    Use the `ec_mic` input (see **Linux audio** + **Audio routing** below).
 
-5. **(Optional) Wake Hotword** 
-   Picovoice Porcupine for “hello robot”; if missing, text fallback is used.
+2.  **Tune thresholds for your room**
+    -   `min_speech_duration`: **1.0–1.2s** (utterances shorter than this are ignored)
+    -   `silence_to_end`: **1200–1500 ms** (only for *active* session end)
+    -   Keep **AGC off** in the OS/driver and inside AEC if exposed.
 
-6. **Stop command (PyTorch detector)** 
-   `audio.stop_keyword` loads `voices/stop_keyword.onnx` (other vs stop classes) and runs only while TTS is speaking. Tune `logit_margin`, `prob_threshold`, or `hits_required` if you need stricter detection.
-   Ajustează `tts.backchannel.delay_ms/phrase_*` dacă vrei să schimbi filler-ul „One moment…” care acoperă latențele mari la TTFT.
+3.  **Keys & env**
+    -   Put secrets in `.env` if needed.
+    -   Activating a venv **does not** read `.env`. Either:
+        -   use `python-dotenv` inside the app, **or**
+        -   `export $(grep -v '^#' .env | xargs)` before `python -m src.app`.
+
+4.  **Run with structured logs**
+    ```bash
+    LOG_LEVEL=INFO LOG_DIR=logs python -m src.app
+    ```
+    Press **CTRL+C once** to exit cleanly — it stops TTS, flushes buffers, dumps a metrics snapshot, and closes all background listeners (no need for `pkill`).
+
+5.  **(Optional) Wake Hotword**
+    OpenWakeWord with custom ONNX models for "hello robot"; if missing, text fallback is used.
+
+6.  **Stop command (PyTorch detector)**
+    `audio.stop_keyword` loads `voices/stop_keyword.onnx` (other vs stop classes) and runs only while TTS is speaking. Tune `logit_margin`, `prob_threshold`, or `hits_required` if you need stricter detection.
+    Ajustează `tts.backchannel.delay_ms/phrase_*` dacă vrei să schimbi filler-ul „One moment…” care acoperă latențele mari la TTFT.
 
 ### Backchannel (TTFT filler)
 
@@ -64,7 +89,7 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 
 ## 🧩 Mini flow (pipeline)
 
-**Standby & Wake** → (Porcupine **or** text fallback) 
+**Standby & Wake** → (OpenWakeWord **or** text fallback) 
 → **Acknowledgement** (“Yes, I’m listening.” / “Da, te ascult.”) 
 → **Record & endpoint** (VAD on silence; AEC + NS + HPF; AGC off) 
 → **ASR** (Faster-Whisper; session auto RO/EN; standby favors EN) 
@@ -83,20 +108,19 @@ Private, local, low-latency voice assistant with hotword detection, ASR, **strea
 **How:** WebRTC AEC uses an **adaptive filter** to estimate the **echo path** (far-end playback → what the mic would hear) and subtracts it from the mic stream. It adapts in real time.
 
 **Extra guards we use:**
-* **Exact-match goodbye only** (no partial “pa…” exits).
-* **Audio similarity veto**: if incoming mic frames highly correlate with recent TTS frames, ignore them.
+* **Exact-match goodbye only** (no partial "pa..." exits).
 * **Voice-only gating**: prioritize voiced segments for barge-in (reduces knocks/claps).
 
 ---
 
 ## 🧪 Biggest build obstacles (and fixes)
 
-* **Echo loop (bot hears itself)** → fixed with **system AEC** + selecting `ec_mic`, AGC off, and a TTS-similarity veto.
+* **Echo loop (bot hears itself)** → fixed with **system AEC** + selecting `ec_mic`, AGC off.
 * **False exits on “pa…”** → fixed via **exact-match goodbyes** only.
 * **TTS micro-pauses** → fixed with **double buffering**.
 * **Noise-triggered barge-in** → improved by **voiced-only gating** and higher minimum speech duration.
 
-> **BIGGEST OBSTACLE — reliable barge-in**: now solid with **Cobra VAD**. It also works *without* Picovoice (with WebRTC VAD + thresholds), but Cobra is more robust.
+> **BIGGEST OBSTACLE — reliable barge-in**: now solid with **WebRTC VAD** + tuned thresholds.
 
 ---
 
@@ -203,10 +227,8 @@ Use this wizard whenever you change speakers, room layout, or microphone gain so
    ```
    barge_min_rms_dbfs: 24.3
    barge_highpass_hz: 200
-   similarity_veto.max_input_rms_db: 21.8
-   similarity_veto.ncc_threshold: 0.78
    ```
-   Copy them into `configs/audio.yaml` (keep AGC off). These numbers are derived from the measured speaker leak, so barge-in and the similarity veto trigger only when real speech is present.
+   Copy them into `configs/audio.yaml` (keep AGC off). These numbers are derived from the measured speaker leak, so barge-in triggers only when real speech is present.
 4. **Re-run after major changes.** If you move the robot, change speaker volume, or switch microphones, repeat the wizard so the thresholds stay accurate.
 
 ---
@@ -221,12 +243,10 @@ Use this wizard whenever you change speakers, room layout, or microphone gain so
 
 ---
 
-## 🗜️ Barge-in reliability (with and without Picovoice)
+## 🗜️ Barge-in reliability
 
-* **Without Picovoice**: WebRTC VAD + tuned thresholds can pause TTS when **human voice** is detected.
-* **With Picovoice**: **Cobra VAD** is more robust to noise; **Porcupine** gives instant wake.
-* If you don’t have keys, fallback to text matching for wake and to WebRTC VAD for barge-in.
-* The ONNX stop keyword detector watches 1s windows (0.5s hop) while TTS speaks and cuts playback when the “stop robot” logit margin/probability crosses your configured thresholds.
+* **WebRTC VAD** + tuned thresholds can pause TTS when **human voice** is detected.
+* The ONNX stop keyword detector watches 1s windows (0.5s hop) while TTS speaks and cuts playback when the "stop robot" logit margin/probability crosses your configured thresholds.
 
 **Pro-tips**
 * Raise `min_speech_duration` to avoid coughs/knocks.

@@ -65,19 +65,12 @@ class TTSCfg(BaseModel):
     voice_en_hint: Optional[str] = Field("en")
     piper: Optional[PiperCfg] = None
 
-class PorcupineCfg(BaseModel):
-    model_config = ConfigDict(extra="allow", protected_namespaces=())
-    enabled: bool = False
-    access_key: Optional[str] = None
-    ppn_path: Optional[str] = None
-    sensitivity: float = 0.6
-    lang_hint: Optional[str] = Field("auto")  # "auto" | "en" | "ro"
 
 class WakeCfg(BaseModel):
     model_config = ConfigDict(extra="allow", protected_namespaces=())
     wake_phrases: List[str]
     acknowledgement: Dict[str, str]
-    porcupine: Optional[PorcupineCfg] = None
+
 
 class RouteCfg(BaseModel):
     rules: List[Dict[str, Any]] = []

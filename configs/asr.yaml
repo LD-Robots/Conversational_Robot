@@ -2,9 +2,9 @@ provider: faster            # faster | openai
 model_size: small           # tiny/base/small/medium/large-v2
 compute_type: int8          # int8 (CPU) | float16 (GPU) | int8_float16 (GPU slab)
 device: cpu                 # cpu | cuda
-beam_size: 1
+beam_size: 5
 force_language:             # ex: en/ro, sau gol pentru auto
-vad_min_silence_ms: 300     # VAD intern (faster-whisper) – endpointing mai „snappy”
-
+vad_min_silence_ms: 300     # VAD intern (faster-whisper) – endpointing mai „snappy"
+initial_prompt: "Urmează o conversație clară în limba română cu un asistent inteligent."
 # Warm-up: ruleaza o transcriere dummy la boot
 warmup_enabled: true

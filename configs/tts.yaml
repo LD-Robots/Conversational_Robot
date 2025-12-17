@@ -37,3 +37,5 @@ cache:
     ack_ro: "Da, te ascult."
     filler_en: "One moment..."
     filler_ro: "Un moment..."
+    goodbye_en: "Goodbye! Have a great day!"
+    goodbye_ro: "La revedere! O zi bună!"
