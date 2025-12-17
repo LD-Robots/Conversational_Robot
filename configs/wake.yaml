@@ -1,20 +1,17 @@
-engine: openwakeword   # openwakeword | text
-threshold: 60          # folosit doar pentru fallback-ul text (ASR)
-wake_phrases:
-  - "hello robot"
-
+engine: openwakeword
+wake_phrases: ["hello robot"]
+threshold: 72
 acknowledgement:
-  ro: "Da, te ascult."
   en: "Yes, I'm listening."
+  ro: "Da, te ascult."
 
 openwakeword:
-  inference_framework: "onnx"
-  sample_rate: 16000
-  wake_keyword: "hello_robot"
-  wake_lang: "en"
-  threshold: 0.55
-  cooldown_ms: 1200
   keywords:
     hello_robot:
       model_path: "voices/hello_robot.onnx"
-      threshold: 0.55
+      threshold: 0.3
+      cooldown_ms: 1200
+      kind: wake
+  inference_framework: onnx
+  sample_rate: 16000
+  block_ms: 20

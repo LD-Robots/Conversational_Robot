@@ -14,7 +14,7 @@ backchannel:
   phrase_ro: "Un moment..."
 
 piper:
-  exe: "/home/delia/Conversational_Robot/Conversational_Bot/.venv/bin/piper"     # verifică cu: which piper
+  exe: "venv/bin/piper"     # verifică cu: which piper
   model_ro: "voices/ro_RO-mihai-medium.onnx"
   config_ro: "voices/ro_RO-mihai-medium.onnx.json"
   model_en: "voices/en_US-amy-medium.onnx" 

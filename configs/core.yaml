@@ -14,7 +14,7 @@ fast_exit:
   hotword:
     enabled: true
     engine: openwakeword
-    model_path: "/home/delia/Conversational_Robot/Conversational_Bot/voices/goodbye_robot.onnx"
+    model_path: "voices/goodbye_robot.onnx"
     threshold: 0.55
     min_gap_ms: 1200
     label: "goodbye robot"
