@@ -19,8 +19,8 @@ from src.core.config import load_all
 from src.audio.input import record_until_silence
 from src.audio.barge import BargeInListener
 from src.asr import make_asr
-from src.llm.engine import LLMLocal
-from src.tts.engine import TTSLocal
+from src.llm import make_llm
+from src.tts import make_tts
 from src.core.wake import WakeDetector
 from src.wake.openwakeword_engine import OpenWakeWordEngine
 from src.utils.textnorm import normalize_text
@@ -92,8 +92,8 @@ def main():
 
     # Engines
     asr = make_asr(cfg["asr"], logger)
-    llm = LLMLocal(cfg["llm"], logger)
-    tts = TTSLocal(cfg["tts"], logger)
+    llm = make_llm(cfg["llm"], logger)
+    tts = make_tts(cfg["tts"], logger)
     shutdown_once = threading.Event()
 
     def shutdown_requested() -> bool:
