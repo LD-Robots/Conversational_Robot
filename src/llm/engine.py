@@ -45,6 +45,16 @@ class LLMLocal:
                 self.log.error(f"OpenAI client indisponibil: {e}. Revin pe 'rule'.")
                 self.provider = "rule"
 
+        # Groq client
+        self._groq = None
+        if self.provider == "groq":
+            try:
+                from groq import Groq
+                self._groq = Groq(api_key=os.getenv("GROQ_API_KEY"))
+            except Exception as e:
+                self.log.error(f"Groq client indisponibil: {e}. Revin pe 'rule'.")
+                self.provider = "rule"
+
         self.log.info(f"LLM provider activ: {self.provider}")
         
         # Warm-up la boot
@@ -94,6 +104,9 @@ class LLMLocal:
     def generate_stream(self, user_text: str, lang_hint: str = "en", mode: Optional[str] = None, history: Optional[List[Dict]] = None):
         """Generează răspuns cu streaming. history = [{"role": "user"/"assistant", "content": ...}, ...]"""
         mode = (mode or self.default_mode).lower()
+        if self.provider == "groq":
+            gen = self._groq_stream(user_text, lang_hint, mode, history)
+            return wrap_stream_for_first_token(gen, llm_first_token_latency)
         if self.provider == "ollama":
             gen = self._ollama_stream(user_text, lang_hint, mode, history)
             return wrap_stream_for_first_token(gen, llm_first_token_latency)
@@ -247,3 +260,47 @@ class LLMLocal:
         except Exception as e:
             self.log.error(f"OpenAI error: {e}")
             return self._rule_based(user_text, lang_hint)
+
+    def _groq_stream(self, user_text: str, lang_hint: str, mode: str = "precise", history: Optional[List[Dict]] = None):
+        """Streaming cu API-ul Groq - ultra-rapid (~100-300ms first token)."""
+        unknown = self._get_fallback("unknown", lang_hint) or "I don't know."
+        
+        sys_content = (self.system or "You are a helpful assistant.").strip()
+        if mode == "precise":
+            sys_content += f"\nIMPORTANT: Answer only with verified facts. If uncertain, reply with: '{unknown}'"
+        
+        messages = [{"role": "system", "content": sys_content}]
+        
+        # Adaugă history
+        if self.history_enabled and history:
+            limited = history[-(self.max_history_turns * 2):]
+            for msg in limited:
+                messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+        
+        messages.append({"role": "user", "content": user_text})
+        
+        start = time.perf_counter()
+        try:
+            stream = self._groq.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.0 if mode == "precise" else self.temperature,
+                max_tokens=self.max_tokens,
+                stream=True,
+            )
+            
+            first_token_s = None
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                tok = delta.content or ""
+                if tok:
+                    if first_token_s is None:
+                        first_token_s = time.perf_counter()
+                        self.log.info(f"LLM first token in {first_token_s - start:.2f}s")
+                    yield tok
+            
+            if first_token_s is not None:
+                self.log.info(f"LLM stream completed in {time.perf_counter() - start:.2f}s")
+        except Exception as e:
+            self.log.error(f"Groq stream error: {e}")
+            yield self._get_fallback("error", lang_hint) or "Technical error. Try again."

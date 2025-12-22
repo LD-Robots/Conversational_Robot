@@ -9,6 +9,9 @@ import queue
 from rapidfuzz import fuzz
 from dotenv import load_dotenv, find_dotenv
 
+# Încarcă variabilele din .env (ex: GROQ_API_KEY)
+load_dotenv(find_dotenv())
+
 from src.core.fast_exit import FastExit
 from src.core.states import BotState
 from src.core.logger import setup_logger
