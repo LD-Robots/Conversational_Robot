@@ -7,6 +7,15 @@ language_policy: auto
 default_mode: precise         
 strict_facts: false  #daca nu stie spune ca nu stie 
 
+# ─────────────────────────────────────────────────────────────
+# Client-Server Mode (pentru împărțirea pe 2 laptopuri)
+# ─────────────────────────────────────────────────────────────
+mode: remote                # local | remote
+# Când mode: remote, LLM rulează pe server și clientul trimite text prin HTTP
+remote_host: "localhost"      # IP-ul serverului (localhost pentru test)
+remote_port: 8001             # Portul serverului
+remote_timeout: 60.0          # Timeout în secunde (LLM streaming poate dura)
+
 # Warm-up: incarca modelul in RAM la boot
 warmup_enabled: true
 warmup_text: "Hello"

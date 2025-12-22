@@ -8,3 +8,13 @@ vad_min_silence_ms: 300     # VAD intern (faster-whisper) – endpointing mai �
 initial_prompt: "Urmează o conversație clară în limba română cu un asistent inteligent."
 # Warm-up: ruleaza o transcriere dummy la boot
 warmup_enabled: true
+
+# ─────────────────────────────────────────────────────────────
+# Client-Server Mode (pentru împărțirea pe 2 laptopuri)
+# ─────────────────────────────────────────────────────────────
+mode: remote                # local | remote
+# Când mode: remote, ASR rulează pe server și clientul trimite audio prin HTTP
+remote_host: "localhost"      # IP-ul serverului (localhost pentru test)
+remote_port: 8001             # Portul serverului
+remote_timeout: 30.0          # Timeout în secunde (ASR poate dura 7-8s pentru română)
+

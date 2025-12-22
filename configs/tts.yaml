@@ -13,6 +13,15 @@ backchannel:
   phrase_en: "One moment..."
   phrase_ro: "Un moment..."
 
+# ─────────────────────────────────────────────────────────────
+# Client-Server Mode (pentru împărțirea pe 2 laptopuri)
+# ─────────────────────────────────────────────────────────────
+mode: remote                # local | remote
+# Când mode: remote, TTS rulează pe server și clientul primește audio prin HTTP
+remote_host: "localhost"      # IP-ul serverului (localhost pentru test)
+remote_port: 8001             # Portul serverului
+remote_timeout: 30.0          # Timeout în secunde
+
 # Edge TTS settings (Microsoft Neural Voices)
 edge_voice_en: "en-GB-SoniaNeural"    # Sonia - voce britanică naturală
 edge_voice_ro: "ro-RO-EmilNeural"     # Emil - voce românească
