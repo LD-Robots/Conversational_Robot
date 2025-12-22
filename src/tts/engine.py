@@ -544,13 +544,17 @@ class TTSLocal:
         self.log = logger
         backend = (cfg.get("backend") or "pyttsx3").lower()
         try:
-            if backend == "piper":
+            if backend == "edge":
+                from .edge_backend import EdgeTTS
+                self.impl = EdgeTTS(cfg, logger)
+                self.log.info("TTS backend: Edge (Microsoft Neural Voices)")
+            elif backend == "piper":
                 self.impl = _PiperCmdTTS(cfg, logger)
                 self.log.info("TTS backend: Piper (double-buffer)")
             else:
                 raise RuntimeError("force pyttsx3")
         except Exception as e:
-            self.log.warning(f"Piper indisponibil ({e}). Revin pe pyttsx3.")
+            self.log.warning(f"Backend indisponibil ({e}). Revin pe pyttsx3.")
             self.impl = _Pyttsx3TTS(cfg, logger)
             self.log.info("TTS backend: pyttsx3")
 

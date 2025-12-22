@@ -1,4 +1,4 @@
-backend: piper
+backend: edge                     # edge | piper | pyttsx3
 rate: 180
 volume: 0.7
 voice_ro_hint: "ro"
@@ -12,6 +12,12 @@ backchannel:
   delay_ms: 2000
   phrase_en: "One moment..."
   phrase_ro: "Un moment..."
+
+# Edge TTS settings (Microsoft Neural Voices)
+edge_voice_en: "en-GB-SoniaNeural"    # Sonia - voce britanică naturală
+edge_voice_ro: "ro-RO-EmilNeural"     # Emil - voce românească
+edge_rate: "+0%"                       # viteza vocii (-50% la +100%)
+edge_pitch: "+0Hz"                     # pitch-ul vocii
 
 piper:
   exe: "venv/bin/piper"     # verifică cu: which piper
@@ -29,13 +35,22 @@ piper:
   warmup_lang: "en"
 
 # Pre-cache: fraze comune pre-generate la boot
-cache:
-  enabled: true
-  dir: "voices/cache"
-  phrases:
-    ack_en: "Yes, I'm listening."
-    ack_ro: "Da, te ascult."
-    filler_en: "One moment..."
-    filler_ro: "Un moment..."
-    goodbye_en: "Goodbye! Have a great day!"
-    goodbye_ro: "La revedere! O zi bună!"
+cache_phrases:
+  ack_en:
+    text: "Yes, I'm listening."
+    lang: "en"
+  ack_ro:
+    text: "Da, te ascult."
+    lang: "ro"
+  filler_en:
+    text: "One moment..."
+    lang: "en"
+  filler_ro:
+    text: "Un moment..."
+    lang: "ro"
+  goodbye_en:
+    text: "Goodbye! Have a great day!"
+    lang: "en"
+  goodbye_ro:
+    text: "La revedere! O zi bună!"
+    lang: "ro"
