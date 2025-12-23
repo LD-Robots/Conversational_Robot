@@ -437,7 +437,11 @@ def main():
                     # Adaugă mesajul user în history
                     conversation_history.append({"role": "user", "content": user_text})
                     
-                    token_iter_raw = llm.generate_stream(user_text, lang_hint=user_lang, mode="precise", history=conversation_history[:-1])
+                    # Forțează limba răspunsului cu instrucțiune explicită
+                    lang_suffix = " [Respond in English only]" if user_lang == "en" else " [Răspunde doar în română]"
+                    user_text_with_lang = user_text + lang_suffix
+                    
+                    token_iter_raw = llm.generate_stream(user_text_with_lang, lang_hint=user_lang, mode="precise", history=conversation_history[:-1])
 
                     # netezește streamul în fraze stabile:
                     tts_cfg = cfg["tts"]
