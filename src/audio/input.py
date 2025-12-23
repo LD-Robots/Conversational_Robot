@@ -21,12 +21,15 @@ def _float_to_int16(audio_f32: np.ndarray) -> np.ndarray:
     return (audio_f32 * 32767.0).astype(np.int16)
 
 
-def record_until_silence(cfg_audio: dict, out_wav_path: Path, logger):
+def record_until_silence(cfg_audio: dict, out_wav_path: Path, logger, quiet_short: bool = False):
     """
     Înregistrează mono 16kHz și se oprește după `silence_ms_to_end` ms de liniște
     (detectată de VAD) sau după `max_record_seconds` (fallback).
 
     Anti-spam: dacă vocea cumulată < `min_valid_seconds` -> NU salvează fișierul, întoarce voice_sec.
+    
+    Args:
+        quiet_short: Dacă True, nu loghează "utterance prea scurt" (pentru grupare externă)
 
     Returnează: (path, voice_seconds)
     """
@@ -135,7 +138,8 @@ def record_until_silence(cfg_audio: dict, out_wav_path: Path, logger):
 
     # — dacă vocea efectivă este sub prag -> NU salvăm nimic (anti-spam)
     if voice_sec < min_valid_seconds:
-        logger.info(f"⏭️ Utterance prea scurt (voce ~{voice_sec:.2f}s < {min_valid_seconds:.2f}s) — ignor, nu salvez.")
+        if not quiet_short:
+            logger.info(f"⏭️ Utterance prea scurt (voce ~{voice_sec:.2f}s < {min_valid_seconds:.2f}s) — ignor, nu salvez.")
         return str(out_wav_path), voice_sec
 
     out_wav_path.parent.mkdir(parents=True, exist_ok=True)

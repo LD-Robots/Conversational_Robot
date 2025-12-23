@@ -299,9 +299,9 @@ def main():
             ask_cfg = dict(cfg["audio"])
             ask_cfg.update({
                 # scurtează endpointing-ul în sesiune (nu afectează standby)
-                "silence_ms_to_end": 450,        # de la 1400 -> ~450ms
+                "silence_ms_to_end": 500,        # echilibru între rapiditate și false positives
                 "max_record_seconds": int(cfg["audio"].get("max_record_seconds", 6)),
-                "vad_aggressiveness": int(cfg["audio"].get("vad_aggressiveness", 3)),
+                "vad_aggressiveness": int(cfg["audio"].get("vad_aggressiveness", 2)),
 
                 # important: permite utterance scurt pentru "goodbye robot"
                 "min_valid_seconds": 0.35,       # permiți fraze foarte scurte
@@ -353,15 +353,21 @@ def main():
                 except Exception as e:
                     logger.warning(f"🔕 Goodbye hotword dezactivat pentru sesiunea curentă: {e}")
                     goodbye_listener = None
-
+            short_utt_count = 0  # contor pentru utterance-uri prea scurte
             try:
                 while time.time() - last_activity < session_idle_seconds:
                     user_wav = data_dir / "cache" / "user_utt.wav"
-                    path_user, dur = record_until_silence(ask_cfg, user_wav, logger)
+                    path_user, dur = record_until_silence(ask_cfg, user_wav, logger, quiet_short=True)
 
                     if dur < float(ask_cfg.get("min_valid_seconds", 0.35)):
+                        short_utt_count += 1
                         continue
-
+                    
+                    # Loghează grupat dacă au fost utterance-uri scurte
+                    if short_utt_count > 0:
+                        logger.info(f"⏭️ Ignorate {short_utt_count} utterance-uri prea scurte")
+                        short_utt_count = 0
+                    
                     state = BotState.THINKING
 
                     # ——— ASR: strict RO/EN ———
