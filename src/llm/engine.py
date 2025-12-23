@@ -1,6 +1,7 @@
 # src/llm/engine.py
 from __future__ import annotations
 from typing import Dict, Optional, List
+from datetime import datetime
 import os, requests, json, time
 from src.telemetry.metrics import observe_hist, llm_latency, llm_first_token_latency, wrap_stream_for_first_token
 
@@ -14,7 +15,7 @@ class LLMLocal:
             provider = "rule"
         self.provider = provider
 
-        self.system = self.cfg.get("system_prompt", "")
+        self._system_base = self.cfg.get("system_prompt", "")
         self.host = self.cfg.get("host", "http://localhost:11434")
         self.model = self.cfg.get("model", "qwen2.5:3b")
         self.max_tokens = int(self.cfg.get("max_tokens", 120))
@@ -59,6 +60,13 @@ class LLMLocal:
         
         # Warm-up la boot
         self._ensure_warm()
+
+    @property
+    def system(self) -> str:
+        """Returnează system prompt cu data curentă injectată."""
+        date_str = datetime.now().strftime("%A, %B %d, %Y")  # e.g., "Monday, December 23, 2024"
+        date_prefix = f"Today is {date_str}.\n\n"
+        return date_prefix + (self._system_base or "")
 
     def _ensure_warm(self):
         """Încarcă modelul în RAM prin request dummy."""
