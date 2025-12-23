@@ -34,7 +34,7 @@ stop_keyword:
   enabled: true
   model_path: "voices/stop_keyword.onnx"
   logit_margin: 1.2
-  prob_threshold: 0.85
+  prob_threshold: 0.7
   hits_required: 1
   debug: false
 

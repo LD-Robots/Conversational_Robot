@@ -119,7 +119,7 @@ class BargeInListener:
 
         self.log.info(f"🎯 Barge-in inteligent: min_voice={self.min_voice_ms}ms, "
                       f"rms_thr={self.min_rms_dbfs}dB, hp={self.highpass_hz}Hz, "
-                      f"zcr=[{self.zcr_min},{self.zcr_max}], vad=WebRTC")
+                      f"zcr=[{self.zcr_min},{self.zcr_max}], vad=Silero")
 
     def _open_stream(self):
         def cb(indata, frames, time_info, status):

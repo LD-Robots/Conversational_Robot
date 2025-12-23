@@ -31,7 +31,24 @@ def make_tts(cfg_tts: dict, logger=None) -> TTSInterface:
         port = int(cfg_tts.get("remote_port", 8001))
         timeout = float(cfg_tts.get("remote_timeout", 30.0))
         logger.info(f"🌐 TTS mode=remote, server={host}:{port}")
-        return RemoteTTS(host=host, port=port, timeout=timeout, logger=logger)
+        
+        tts_client = RemoteTTS(host=host, port=port, timeout=timeout, logger=logger)
+        
+        # Health check la startup
+        try:
+            import requests
+            health_url = f"http://{host}:{port}/health"
+            resp = requests.get(health_url, timeout=2)
+            if resp.status_code == 200:
+                logger.info(f"✅ TTS server disponibil ({health_url})")
+            else:
+                logger.warning(f"⚠️ TTS server răspunde cu status {resp.status_code}")
+        except requests.exceptions.ConnectionError:
+            logger.warning(f"⚠️ TTS server nu răspunde la {host}:{port} — pornește serverul!")
+        except Exception as e:
+            logger.warning(f"⚠️ Health check TTS eșuat: {e}")
+        
+        return tts_client
     
     # Mod local - creează engine și îl învelește în LocalTTS
     backend = (cfg_tts.get("backend") or "pyttsx3").lower()
