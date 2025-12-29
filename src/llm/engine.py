@@ -62,6 +62,10 @@ class LLMLocal:
                 self.provider = "rule"
 
         self.log.info(f"LLM provider activ: {self.provider}")
+        if self.websearch_enabled:
+            self.log.info(f"🌐 Web search ENABLED (model: {self.websearch_model})")
+        else:
+            self.log.info(f"🌐 Web search DISABLED")
         
         # Warm-up la boot
         self._ensure_warm()
@@ -336,18 +340,24 @@ class LLMLocal:
         
         # Cuvinte cheie care indică nevoie de info actuală
         current_info_keywords = [
-            # English
+            # English - time-sensitive
             "news", "today", "latest", "current", "recent", "now",
             "weather", "price", "stock", "score", "result",
             "who won", "what happened", "breaking",
+            # English - factual questions that benefit from search
+            "who is the", "who is", "president", "prime minister",
+            "ceo of", "founder of", "how much does", "how much is",
             # Romanian
             "știri", "stiri", "azi", "acum", "recent", "ultima",
             "vreme", "preț", "pret", "scor", "rezultat",
-            "cine a câștigat", "cine a castigat", "ce s-a întâmplat"
+            "cine a câștigat", "cine a castigat", "ce s-a întâmplat",
+            "cine este", "președinte", "presedinte", "prim-ministru"
         ]
         
         for keyword in current_info_keywords:
             if keyword in text_lower:
+                self.log.info(f"🔍 Web search triggered by keyword: '{keyword}'")
                 return True
         
         return False
+
