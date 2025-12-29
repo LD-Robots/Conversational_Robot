@@ -8,6 +8,13 @@ default_mode: precise
 strict_facts: false  #daca nu stie spune ca nu stie 
 
 # ─────────────────────────────────────────────────────────────
+# Web Search (Groq Compound - built-in web search)
+# ─────────────────────────────────────────────────────────────
+websearch_enabled: true                    # activează web search cu Groq Compound
+websearch_model: "compound-beta"           # model cu web search built-in
+websearch_max_tokens: 300                  # tokens mai multe pentru răspunsuri cu info din web
+
+# ─────────────────────────────────────────────────────────────
 # Client-Server Mode (pentru împărțirea pe 2 laptopuri)
 # ─────────────────────────────────────────────────────────────
 mode: remote                # local | remote

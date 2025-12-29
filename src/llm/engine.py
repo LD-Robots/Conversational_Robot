@@ -37,6 +37,11 @@ class LLMLocal:
         # Fallback responses
         self.fallback = self.cfg.get("fallback") or {}
 
+        # Web Search config (Groq Compound)
+        self.websearch_enabled = bool(self.cfg.get("websearch_enabled", False))
+        self.websearch_model = self.cfg.get("websearch_model", "compound-beta")
+        self.websearch_max_tokens = int(self.cfg.get("websearch_max_tokens", 300))
+
         self._openai = None
         if self.provider == "openai":
             try:
@@ -270,7 +275,7 @@ class LLMLocal:
             return self._rule_based(user_text, lang_hint)
 
     def _groq_stream(self, user_text: str, lang_hint: str, mode: str = "precise", history: Optional[List[Dict]] = None):
-        """Streaming cu API-ul Groq - ultra-rapid (~100-300ms first token)."""
+        """Streaming cu API-ul Groq. Suportă web search prin Groq Compound."""
         unknown = self._get_fallback("unknown", lang_hint) or "I don't know."
         
         sys_content = (self.system or "You are a helpful assistant.").strip()
@@ -287,13 +292,25 @@ class LLMLocal:
         
         messages.append({"role": "user", "content": user_text})
         
+        # Detectează dacă întrebarea necesită web search
+        needs_websearch = self._needs_websearch(user_text) if self.websearch_enabled else False
+        
+        # Alege modelul și configurația
+        if needs_websearch:
+            model_to_use = self.websearch_model
+            max_tokens_to_use = self.websearch_max_tokens
+            self.log.info(f"🌐 Using web search model: {model_to_use}")
+        else:
+            model_to_use = self.model
+            max_tokens_to_use = self.max_tokens
+        
         start = time.perf_counter()
         try:
             stream = self._groq.chat.completions.create(
-                model=self.model,
+                model=model_to_use,
                 messages=messages,
                 temperature=0.0 if mode == "precise" else self.temperature,
-                max_tokens=self.max_tokens,
+                max_tokens=max_tokens_to_use,
                 stream=True,
             )
             
@@ -312,3 +329,25 @@ class LLMLocal:
         except Exception as e:
             self.log.error(f"Groq stream error: {e}")
             yield self._get_fallback("error", lang_hint) or "Technical error. Try again."
+
+    def _needs_websearch(self, text: str) -> bool:
+        """Detectează dacă întrebarea necesită informații actuale de pe web."""
+        text_lower = text.lower()
+        
+        # Cuvinte cheie care indică nevoie de info actuală
+        current_info_keywords = [
+            # English
+            "news", "today", "latest", "current", "recent", "now",
+            "weather", "price", "stock", "score", "result",
+            "who won", "what happened", "breaking",
+            # Romanian
+            "știri", "stiri", "azi", "acum", "recent", "ultima",
+            "vreme", "preț", "pret", "scor", "rezultat",
+            "cine a câștigat", "cine a castigat", "ce s-a întâmplat"
+        ]
+        
+        for keyword in current_info_keywords:
+            if keyword in text_lower:
+                return True
+        
+        return False

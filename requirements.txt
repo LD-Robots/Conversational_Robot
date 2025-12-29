@@ -42,6 +42,9 @@ onnxruntime==1.18.1
 # Server API (pentru mod client-server)
 flask>=3.0.0
 edge-tts
+
+# Web search tools
+duckduckgo-search>=6.0.0
 # gunicorn>=23.0.0  # Adaugă pentru production deployment
 
 
