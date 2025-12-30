@@ -347,11 +347,35 @@ class LLMLocal:
             # English - factual questions that benefit from search
             "who is the", "who is", "president", "prime minister",
             "ceo of", "founder of", "how much does", "how much is",
-            # Romanian
+            # English - elections & politics
+            "election", "elected", "candidate", "vote", "voting",
+            "parliament", "congress", "senator", "governor",
+            # English - sports
+            "match", "game", "championship", "tournament", "league",
+            "world cup", "olympics", "fifa", "nba", "nfl",
+            # English - entertainment
+            "movie", "film", "actor", "actress", "oscar", "grammy",
+            "album", "song", "concert", "tour", "netflix", "spotify",
+            # English - tech & business
+            "iphone", "android", "google", "apple", "microsoft", "tesla",
+            "ai", "chatgpt", "openai", "cryptocurrency", "bitcoin",
+            # Romanian - time-sensitive
             "știri", "stiri", "azi", "acum", "recent", "ultima",
             "vreme", "preț", "pret", "scor", "rezultat",
             "cine a câștigat", "cine a castigat", "ce s-a întâmplat",
-            "cine este", "președinte", "presedinte", "prim-ministru"
+            "cine este", "președinte", "presedinte", "prim-ministru",
+            # Romanian - elections & politics
+            "alegeri", "ales", "candidat", "vot", "votat", "votare",
+            "parlament", "senator", "deputat", "partid", "guvern",
+            "tur", "turul doi", "turul întâi", "campanie",
+            # Romanian - sports
+            "meci", "joc", "campionat", "liga", "fotbal", "nationala",
+            "steaua", "dinamo", "cfr", "fcsb", "simona halep",
+            # Romanian - entertainment
+            "film", "actor", "actriță", "actrita", "serial", "netflix",
+            "muzică", "muzica", "concert", "album", "cântăreț", "cantaret",
+            # Romanian - tech & business
+            "telefon", "aplicație", "aplicatie", "emag", "olx"
         ]
         
         for keyword in current_info_keywords:
