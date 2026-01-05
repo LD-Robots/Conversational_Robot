@@ -358,7 +358,7 @@ class LLMLocal:
             "album", "song", "concert", "tour", "netflix", "spotify",
             # English - tech & business
             "iphone", "android", "google", "apple", "microsoft", "tesla",
-            "ai", "chatgpt", "openai", "cryptocurrency", "bitcoin",
+            "chatgpt", "openai", "cryptocurrency", "bitcoin", "gpt-4", "gpt-5",
             # Romanian - time-sensitive
             "știri", "stiri", "azi", "acum", "recent", "ultima",
             "vreme", "preț", "pret", "scor", "rezultat",

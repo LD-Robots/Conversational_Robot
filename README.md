@@ -232,7 +232,7 @@ remote_port: 8001
 # Start client
 LOG_LEVEL=INFO python -m src.app
 ```
-
+python -m src.server.api --host 127.0.0.1 --port 8001
 ---
 
 ## 📊 Performance Metrics

@@ -5,7 +5,7 @@ device: cpu                 # cpu | cuda
 beam_size: 5
 force_language:             # ex: en/ro, sau gol pentru auto
 vad_min_silence_ms: 300     # VAD intern (faster-whisper) – endpointing mai „snappy"
-initial_prompt: "Urmează o conversație clară în limba română cu un asistent inteligent."
+initial_prompt: "A bilingual conversation in Romanian and English. O conversație bilingvă."
 # Warm-up: ruleaza o transcriere dummy la boot
 warmup_enabled: true
 
