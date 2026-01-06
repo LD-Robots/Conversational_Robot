@@ -296,25 +296,15 @@ class LLMLocal:
         
         messages.append({"role": "user", "content": user_text})
         
-        # Detectează dacă întrebarea necesită web search
-        needs_websearch = self._needs_websearch(user_text) if self.websearch_enabled else False
-        
-        # Alege modelul și configurația
-        if needs_websearch:
-            model_to_use = self.websearch_model
-            max_tokens_to_use = self.websearch_max_tokens
-            self.log.info(f"🌐 Using web search model: {model_to_use}")
-        else:
-            model_to_use = self.model
-            max_tokens_to_use = self.max_tokens
+        # compound-beta decide singur când să facă web search
         
         start = time.perf_counter()
         try:
             stream = self._groq.chat.completions.create(
-                model=model_to_use,
+                model=self.model,
                 messages=messages,
                 temperature=0.0 if mode == "precise" else self.temperature,
-                max_tokens=max_tokens_to_use,
+                max_tokens=self.max_tokens,
                 stream=True,
             )
             
@@ -348,8 +338,9 @@ class LLMLocal:
             "who is the", "who is", "president", "prime minister",
             "ceo of", "founder of", "how much does", "how much is",
             # Romanian
-            "știri", "stiri", "azi", "acum", "recent", "ultima",
-            "vreme", "preț", "pret", "scor", "rezultat",
+            "știri", "stiri", "azi", "acum", "recent", "ultima", "moment",
+            "vreme", "preț", "pret", "scor", "rezultat", "valoare", "curs",
+            "euro", "dolar", "bitcoin", "criptomonede",
             "cine a câștigat", "cine a castigat", "ce s-a întâmplat",
             "cine este", "președinte", "presedinte", "prim-ministru"
         ]

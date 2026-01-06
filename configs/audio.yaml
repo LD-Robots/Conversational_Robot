@@ -36,7 +36,7 @@ stop_keyword:
   enabled: true
   model_path: "voices/stop_keyword.onnx"
   logit_margin: 1.2        # era 0.5 - acum necesită diferență mai mare între "stop" și "other"
-  prob_threshold: 0.85     # era 0.6 - acum necesită probabilitate mai mare
+  prob_threshold: 0.96     # crescut la 0.96 - reduce și mai mult false positives
   hits_required: 1
   debug: false
 
