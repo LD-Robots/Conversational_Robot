@@ -28,7 +28,7 @@ warmup_lang: "en"
 
 # Conversation history: tine minte contextul in sesiune
 history_enabled: true
-max_history_turns: 5  # cate perechi user/assistant sa tina
+max_history_turns: 2  # cate perechi user/assistant sa tina (redus pentru conversații mai fresh)
 
 # Fallback responses: mesaje pentru cazuri de eroare
 fallback:

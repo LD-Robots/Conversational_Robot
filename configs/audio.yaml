@@ -17,8 +17,8 @@ barge_debug_interval_ms: 120
 barge_voice_drop_ms: 10
 
 barge_min_voice_ms: 550           # cere ~0.5s voce continuă; crește dacă încă prinde eco
-barge_min_rms_dbfs: 1.4             # nivel minim al vocii; difuzoarele rămân de obicei sub -25 dB
-barge_min_rms_dbfs: -40.2            # nivel minim al vocii; difuzoarele rămân de obicei sub -25 dB
+barge_min_rms_dbfs: -30             # nivel minim al vocii; difuzoarele rămân de obicei sub -25 dB
+#barge_min_rms_dbfs: -40.2            # nivel minim al vocii; difuzoarele rămân de obicei sub -25 dB
 
 
 barge_highpass_hz: 160               # taie huruit/bas înainte de analiză, păstrează voc
@@ -35,9 +35,9 @@ barge_leak_decay_ms: 1800           # cât timp păstrează nivelul eco-ului rec
 stop_keyword:
   enabled: true
   model_path: "voices/stop_keyword.onnx"
-  logit_margin: 1.2        # era 0.5 - acum necesită diferență mai mare între "stop" și "other"
-  prob_threshold: 0.96     # crescut la 0.96 - reduce și mai mult false positives
-  hits_required: 1
+  logit_margin: 2.5        # crescut - ignoră vocea robotului
+  prob_threshold: 0.96     # foarte strict - reduce false positives
+  hits_required: 2         # necesită 2 detecții consecutive
   debug: false
 
 
