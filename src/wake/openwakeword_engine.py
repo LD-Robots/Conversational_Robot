@@ -192,6 +192,45 @@ class OpenWakeWordEngine:
         except KeyboardInterrupt:
             return False
 
+    def wait_for_any(self, timeout_seconds: Optional[float] = None) -> Optional[str]:
+        """
+        Așteaptă detecția oricărui keyword din lista configurată.
+        Returnează numele keyword-ului detectat sau None la timeout.
+        """
+        deadline = None if timeout_seconds is None else (time.monotonic() + timeout_seconds)
+
+        try:
+            while True:
+                if deadline and time.monotonic() > deadline:
+                    return None
+                try:
+                    block = self._queue.get(timeout=0.25)
+                except queue.Empty:
+                    continue
+
+                samples = self._to_mono(block)
+                predictions = self._predict(samples)
+                if not predictions:
+                    continue
+
+                # Verifică TOATE keyword-urile
+                for name, keyword_cfg in self._keywords.items():
+                    score = predictions.get(keyword_cfg["label"])
+                    if score is None:
+                        continue
+
+                    if score >= keyword_cfg["threshold"] and self._cooldown_passed(keyword_cfg):
+                        keyword_cfg["last_hit"] = time.monotonic()
+                        if self.log:
+                            self.log.info(f"🔔 Wake (openwakeword:{name}) score={score:.2f}")
+                        try:
+                            self._model.reset()
+                        except Exception:
+                            pass
+                        return name
+        except KeyboardInterrupt:
+            return None
+
     def _predict(self, samples: np.ndarray) -> Dict[str, float]:
         try:
             return self._model.predict(samples)
