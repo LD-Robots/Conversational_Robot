@@ -123,10 +123,10 @@ class FastExit:
                             pass
 
         # 2) Feedback auditiv minimal (opțional)
-        confirm_msg = self._select_confirm_message(matched)
+        confirm_msg, lang = self._select_confirm_message_with_lang(matched)
         if confirm_msg and hasattr(self.tts, "say") and callable(self.tts.say):
             try:
-                self.tts.say(confirm_msg)
+                self.tts.say(confirm_msg, lang=lang)
             except Exception:
                 pass
 
@@ -154,6 +154,15 @@ class FastExit:
                 return self.confirm_cfg[lang]
             return self.confirm_default
         return self.confirm_default
+
+    def _select_confirm_message_with_lang(self, matched: str) -> tuple:
+        """Returns (message, lang) tuple for TTS with correct voice."""
+        if isinstance(self.confirm_cfg, dict):
+            lang = self._lang_for_phrase(matched)
+            if lang and lang in self.confirm_cfg:
+                return self.confirm_cfg[lang], lang
+            return self.confirm_default, "en"
+        return self.confirm_default, "en"
 
     def _lang_for_phrase(self, matched: str) -> Optional[str]:
         try:

@@ -199,20 +199,25 @@ def main():
             logger.warning(f"Goodbye hotword engine '{goodbye_engine}' nesuportat — dezactivez.")
             use_fast_exit_hotword = False
         else:
+            # Support both single model_path and keywords format
             bye_path = (
                 os.getenv("OPENWAKE_GOODBYE_MODEL", "").strip()
                 or str(fast_exit_hotword_cfg.get("model_path") or "").strip()
             )
-            if not bye_path:
-                logger.warning("🔕 Goodbye hotword (openwakeword): lipsește model_path.")
+            keywords_cfg = fast_exit_hotword_cfg.get("keywords") or {}
+            
+            if not bye_path and not keywords_cfg:
+                logger.warning("🔕 Goodbye hotword (openwakeword): lipsește model_path sau keywords.")
                 use_fast_exit_hotword = False
-            elif not Path(bye_path).expanduser().exists():
+            elif bye_path and not Path(bye_path).expanduser().exists():
                 logger.warning(f"🔕 Goodbye hotword model lipsă: {bye_path}")
                 use_fast_exit_hotword = False
             else:
                 fast_exit_listener_cfg = dict(fast_exit_hotword_cfg)
-                fast_exit_listener_cfg["model_path"] = str(Path(bye_path).expanduser())
-                fast_exit_listener_cfg.setdefault("label", fast_exit_hotword_cfg.get("label") or "goodbye robot")
+                if bye_path:
+                    fast_exit_listener_cfg["model_path"] = str(Path(bye_path).expanduser())
+                    fast_exit_listener_cfg.setdefault("label", fast_exit_hotword_cfg.get("label") or "goodbye robot")
+                # keywords are passed through as-is
                 fast_exit_listener_cfg.setdefault("threshold", 0.5)
                 fast_exit_listener_cfg.setdefault("min_gap_ms", fast_exit_listener_cfg.get("cooldown_ms", 1200))
 
@@ -380,23 +385,13 @@ def main():
 
             if use_fast_exit_hotword and fast_exit_listener_cfg:
                 def _goodbye_cb(_label: str, *_a):
-                    logger.info("🔴 Goodbye hotword detectat — redau mesaj de la revedere.")
+                    logger.info("🔴 Goodbye hotword detectat — închidem sesiunea.")
                     # Oprește TTS-ul curent dacă vorbește
                     try:
                         tts.stop()
                     except Exception:
                         pass
-                    # Redă mesajul de goodbye
-                    try:
-                        if not tts.say_cached("goodbye_en", lang="en"):
-                            tts.say("Goodbye! Have a great day!", lang="en")
-                        # Așteaptă să termine de vorbit
-                        import time as _time
-                        while tts.is_speaking():
-                            _time.sleep(0.05)
-                    except Exception as e:
-                        logger.warning(f"Goodbye TTS error: {e}")
-                    # Acum trigger exit
+                    # Trigger exit - va reda mesajul de goodbye
                     fast_exit.trigger_exit("goodbye-hotword")
                 try:
                     goodbye_listener = OpenWakeWordListener(
@@ -413,6 +408,11 @@ def main():
 
             try:
                 while time.time() - last_activity < session_idle_seconds:
+                    # Check if goodbye hotword was triggered
+                    if fast_exit.pending():
+                        logger.info("🔴 FastExit: sesiune închisă (revenire în standby).")
+                        break
+                    
                     user_wav = data_dir / "cache" / "user_utt.wav"
                     path_user, dur = record_until_silence(ask_cfg, user_wav, logger)
 
@@ -620,6 +620,8 @@ def main():
                 break
             logger.info("⏳ Revenire în standby (spune din nou wake-phrase pentru o nouă sesiune).")
             sessions_ended.inc()
+            # Pauză pentru a lăsa ecoul TTS să se estompeze înainte de a asculta wake words
+            time.sleep(2.0)
 
     except KeyboardInterrupt:
         request_shutdown("CTRL+C detectat")
