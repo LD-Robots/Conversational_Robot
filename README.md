@@ -315,11 +315,29 @@ Access metrics at: `http://localhost:9108/vitals`
 
 ## 🎯 Voice Commands
 
-|     Command     |        Action             |
-|-----------------|---------------------------|
-| "Hello robot"   | Wake up and start listenin|
-| "Goodbye robot" | End session               |
-| "Stop robot"    | Stop current TTS playback |
+### Wake Words (Start Conversation)
+Say any of these to wake up the robot:
+
+| Language | Command | Model |
+|----------|---------|-------|
+| English | "Hello robot" | `hello_robot` |
+| English | "What's up buddy" | `wots_up_bud_dee` |
+| English | "Listen up" | `lis_un_up` |
+| Romanian | "Bună robot" | `boona_ro_bot` |
+| Romanian | "Salut robot" | `sa_loot_ro_bot` |
+
+### Session Commands
+
+| Command | Action | Detection Method |
+|---------|--------|------------------|
+| **"Goodbye robot"** | End session and return to standby | OpenWakeWord (hotword) |
+| **"Bye bye"** | End session (alternative) | OpenWakeWord (hotword) |
+| **"Stop robot"** | Stop current TTS playback immediately | Stop Keyword Detector (ONNX) |
+
+### How It Works
+- **Wake words**: Always listening in standby mode via OpenWakeWord
+- **Goodbye**: Active only during conversation session
+- **Stop**: Active only during TTS playback (requires 2 consecutive detections for reliability)
 
 ---
 
