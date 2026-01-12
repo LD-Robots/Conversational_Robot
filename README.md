@@ -323,12 +323,6 @@ Access metrics at: `http://localhost:9108/vitals`
 
 ---
 
-## 📝 License
-
-This project is for educational and research purposes.
-
----
-
 ## 🔗 Related Files
 
 - [INSTALL.md](INSTALL.md) - Detailed installation guide
