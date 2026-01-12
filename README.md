@@ -12,6 +12,12 @@ This project implements a voice assistant that can:
 - 🧠 Generate intelligent responses (LLM)
 - 🔊 Speak responses naturally (TTS)
 - 🛑 Handle interruptions ("stop robot", "goodbye robot")
+- 💬 **Stream LLM responses** for faster perceived latency
+- 🧠 **Maintain conversation history** (context-aware responses)
+- 🌐 **Auto web search** (compound-beta model decides when to search)
+- 🤖 **Motor command integration** via tagged responses `[MOTOR:action:param]`
+- 😊 **Sentiment detection** and proactive suggestions
+- 💾 **TTS caching** for instant playback of common phrases
 
 ### Architecture Modes
 
@@ -197,6 +203,65 @@ remote_timeout: 30.0
 | **Wake Word** | OpenWakeWord (custom ONNX)           |
 | **Server**    | Flask (REST API)                     |
 | **Audio**     | sounddevice, WebRTC VAD              |
+
+---
+
+## ⚡ Advanced Features
+
+### LLM Streaming
+Responses are streamed token-by-token for instant feedback:
+```python
+# In configs/llm.yaml
+streaming: true  # Enables token-by-token generation
+```
+
+### Conversation History
+Maintains context across multiple turns:
+```yaml
+# In configs/llm.yaml
+history_enabled: true
+max_history_turns: 2  # Keeps last 2 user/assistant exchanges
+```
+
+### Auto Web Search (Compound-Beta)
+The `compound-beta` model automatically searches the web when needed:
+```yaml
+# In configs/llm.yaml
+model: "compound-beta"  # Auto web search when lacking info
+```
+⚠️ Note: compound-beta takes 3-8s due to web search vs. ~1s for llama-3.1-8b-instant
+
+### Motor Command Integration
+LLM can control robot motors via tagged responses:
+```
+User: "Raise your left hand"
+Bot: "Ok, done. [MOTOR:raise_hand:left]"
+```
+
+Supported tags:
+- `[MOTOR:raise_hand:left|right]` - Raise specified hand
+- `[MOTOR:wave:left|right]` - Wave hand
+- `[MOTOR:nod_head]` - Nod head
+- `[INTENT:question]` - Indicates user asked a question
+- `[INTENT:greeting]` - Greeting detection
+
+### TTS Caching
+Common phrases are pre-synthesized and cached for instant playback (\<100ms):
+```yaml
+# In configs/tts.yaml
+cache_enabled: true
+common_phrases:
+  - "Hello!"
+  - "I don't understand."
+  - "Let me think about that."
+```
+
+### Sentiment Detection
+Detects user sentiment and provides proactive suggestions:
+- Positive sentiment → Encouraging responses
+- Negative sentiment → Supportive tone
+- Neutral → Standard informative responses
+
 
 ---
 
