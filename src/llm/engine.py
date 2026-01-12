@@ -1,6 +1,7 @@
 # src/llm/engine.py
 from __future__ import annotations
 from typing import Dict, Optional, List
+from datetime import datetime
 import os, requests, json, time
 from src.telemetry.metrics import observe_hist, llm_latency, llm_first_token_latency, wrap_stream_for_first_token
 
@@ -14,7 +15,7 @@ class LLMLocal:
             provider = "rule"
         self.provider = provider
 
-        self.system = self.cfg.get("system_prompt", "")
+        self._system_base = self.cfg.get("system_prompt", "")
         self.host = self.cfg.get("host", "http://localhost:11434")
         self.model = self.cfg.get("model", "qwen2.5:3b")
         self.max_tokens = int(self.cfg.get("max_tokens", 120))
@@ -36,6 +37,11 @@ class LLMLocal:
         # Fallback responses
         self.fallback = self.cfg.get("fallback") or {}
 
+        # Web Search config (Groq Compound)
+        self.websearch_enabled = bool(self.cfg.get("websearch_enabled", False))
+        self.websearch_model = self.cfg.get("websearch_model", "compound-beta")
+        self.websearch_max_tokens = int(self.cfg.get("websearch_max_tokens", 300))
+
         self._openai = None
         if self.provider == "openai":
             try:
@@ -56,9 +62,20 @@ class LLMLocal:
                 self.provider = "rule"
 
         self.log.info(f"LLM provider activ: {self.provider}")
+        if self.websearch_enabled:
+            self.log.info(f"🌐 Web search ENABLED (model: {self.websearch_model})")
+        else:
+            self.log.info(f"🌐 Web search DISABLED")
         
         # Warm-up la boot
         self._ensure_warm()
+
+    @property
+    def system(self) -> str:
+        """Returnează system prompt cu data curentă injectată."""
+        date_str = datetime.now().strftime("%A, %B %d, %Y")  # e.g., "Monday, December 23, 2024"
+        date_prefix = f"Today is {date_str}.\n\n"
+        return date_prefix + (self._system_base or "")
 
     def _ensure_warm(self):
         """Încarcă modelul în RAM prin request dummy."""
@@ -262,7 +279,7 @@ class LLMLocal:
             return self._rule_based(user_text, lang_hint)
 
     def _groq_stream(self, user_text: str, lang_hint: str, mode: str = "precise", history: Optional[List[Dict]] = None):
-        """Streaming cu API-ul Groq - ultra-rapid (~100-300ms first token)."""
+        """Streaming cu API-ul Groq. Suportă web search prin Groq Compound."""
         unknown = self._get_fallback("unknown", lang_hint) or "I don't know."
         
         sys_content = (self.system or "You are a helpful assistant.").strip()
@@ -278,6 +295,8 @@ class LLMLocal:
                 messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
         
         messages.append({"role": "user", "content": user_text})
+        
+        # compound-beta decide singur când să facă web search
         
         start = time.perf_counter()
         try:
@@ -304,3 +323,56 @@ class LLMLocal:
         except Exception as e:
             self.log.error(f"Groq stream error: {e}")
             yield self._get_fallback("error", lang_hint) or "Technical error. Try again."
+
+    def _needs_websearch(self, text: str) -> bool:
+        """Detectează dacă întrebarea necesită informații actuale de pe web."""
+        text_lower = text.lower()
+        
+        # Cuvinte cheie care indică nevoie de info actuală
+        current_info_keywords = [
+            # English - time-sensitive
+            "news", "today", "latest", "current", "recent", "now",
+            "weather", "price", "stock", "score", "result",
+            "who won", "what happened", "breaking",
+            # English - factual questions that benefit from search
+            "who is the", "who is", "president", "prime minister",
+            "ceo of", "founder of", "how much does", "how much is",
+            # English - elections & politics
+            "election", "elected", "candidate", "vote", "voting",
+            "parliament", "congress", "senator", "governor",
+            # English - sports
+            "match", "game", "championship", "tournament", "league",
+            "world cup", "olympics", "fifa", "nba", "nfl",
+            # English - entertainment
+            "movie", "film", "actor", "actress", "oscar", "grammy",
+            "album", "song", "concert", "tour", "netflix", "spotify",
+            # English - tech & business
+            "iphone", "android", "google", "apple", "microsoft", "tesla",
+            "chatgpt", "openai", "cryptocurrency", "bitcoin", "gpt-4", "gpt-5",
+            # Romanian - time-sensitive
+            "știri", "stiri", "azi", "acum", "recent", "ultima", "moment",
+            "vreme", "preț", "pret", "scor", "rezultat", "valoare", "curs",
+            "euro", "dolar", "criptomonede",
+            "cine a câștigat", "cine a castigat", "ce s-a întâmplat",
+            "cine este", "președinte", "presedinte", "prim-ministru",
+            # Romanian - elections & politics
+            "alegeri", "ales", "candidat", "vot", "votat", "votare",
+            "parlament", "senator", "deputat", "partid", "guvern",
+            "tur", "turul doi", "turul întâi", "campanie",
+            # Romanian - sports
+            "meci", "joc", "campionat", "liga", "fotbal", "nationala",
+            "steaua", "dinamo", "cfr", "fcsb", "simona halep",
+            # Romanian - entertainment
+            "film", "actor", "actriță", "actrita", "serial", "netflix",
+            "muzică", "muzica", "concert", "album", "cântăreț", "cantaret",
+            # Romanian - tech & business
+            "telefon", "aplicație", "aplicatie", "emag", "olx"
+        ]
+        
+        for keyword in current_info_keywords:
+            if keyword in text_lower:
+                self.log.info(f"🔍 Web search triggered by keyword: '{keyword}'")
+                return True
+        
+        return False
+

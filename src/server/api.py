@@ -106,7 +106,7 @@ def transcribe():
                 f.write(audio_data)
             
             result = _asr.transcribe(temp_path, language_override=language)
-            _logger.info(f"🧏 ASR: [{result.get('lang')}] {result.get('text', '')[:50]}...")
+            _logger.info(f"🧏 ASR: [{result.get('lang')}] {result.get('text', '')}")
             
             return jsonify(result)
             
@@ -147,7 +147,7 @@ def transcribe_ro_en():
                 f.write(audio_data)
             
             result = _asr.transcribe_ro_en(temp_path)
-            _logger.info(f"🧏 ASR (ro_en): [{result.get('lang')}] {result.get('text', '')[:50]}...")
+            _logger.info(f"🧏 ASR (ro_en): [{result.get('lang')}] {result.get('text', '')}")
             
             return jsonify(result)
             
@@ -187,7 +187,7 @@ def generate():
             return jsonify({"error": "No text provided"}), 400
         
         response = _llm.generate(user_text, lang_hint=lang, mode=mode)
-        _logger.info(f"🧠 LLM: {response[:50]}...")
+        _logger.info(f"🧠 LLM: {response}")
         
         return jsonify({"response": response})
         
@@ -224,7 +224,7 @@ def generate_stream():
             except Exception as e:
                 _logger.error(f"LLM stream error: {e}")
         
-        _logger.info(f"🧠 LLM stream start: {user_text[:30]}...")
+        _logger.info(f"🧠 LLM stream start: {user_text}")
         return Response(generate_tokens(), mimetype='text/plain')
         
     except Exception as e:
@@ -276,7 +276,7 @@ def synthesize():
             
             asyncio.run(synth())
             
-            _logger.info(f"🗣️ TTS: [{lang}] {text[:30]}...")
+            _logger.info(f"🗣️ TTS: [{lang}] {text}")
             
             # Trimite fișierul audio
             return send_file(

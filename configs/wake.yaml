@@ -1,17 +1,51 @@
-engine: openwakeword
-wake_phrases: ["hello robot"]
-threshold: 72
+engine: both
+
 acknowledgement:
   en: "Yes, I'm listening."
   ro: "Da, te ascult."
 
+wake_phrases:
+  - "hello robot"
+  - "hey robot"
+  - "what's up buddy"
+  - "bună robot"
+  - "salut robot"
+  - "listen up"
+
+threshold: 65
+
 openwakeword:
+  wake_keyword: hello_robot
   keywords:
     hello_robot:
       model_path: "voices/hello_robot.onnx"
-      threshold: 0.3
-      cooldown_ms: 1200
-      kind: wake
-  inference_framework: onnx
-  sample_rate: 16000
-  block_ms: 20
+      threshold: 0.5
+      cooldown_ms: 2000
+    
+    wots_up_bud_dee:
+      model_path: "voices/Wots_up__bud_dee.onnx"
+      threshold: 0.5
+      cooldown_ms: 2000
+      
+    boona_ro_bot:
+      model_path: "voices/boona__ro_bot.onnx"
+      threshold: 0.5
+      cooldown_ms: 2000
+
+    sa_loot_ro_bot:
+      model_path: "voices/sa_loot_ro_bot.onnx"
+      threshold: 0.5
+      cooldown_ms: 2000
+    
+    lis_un_up:
+      model_path: "voices/lis_un_up.onnx"
+      threshold: 0.5
+      cooldown_ms: 2000
+
+porcupine:
+  access_key: "n4K2eEH2X6ddCoQwXw/pCEiTUvJBmUG+BvxIDuVmZ7di0Z04k3G8jA=="
+  keywords:
+    hey_robot:
+      model_path: "voices/hey-robot_en_linux_v4_0_0.ppn"
+      sensitivity: 0.5
+      cooldown_ms: 2000

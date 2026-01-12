@@ -30,6 +30,7 @@ class ASRCfg(BaseModel):
     vad_min_silence_ms: int = Field(300, ge=100, le=1500)
 
 class LLMCfg(BaseModel):
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
     provider: str = Field("ollama")
     host: str = Field("http://127.0.0.1:11434")
     model: str = Field("llama3.2")
@@ -39,6 +40,10 @@ class LLMCfg(BaseModel):
     system_prompt: Optional[str] = ""
     default_mode: Optional[str] = Field("precise")
     strict_facts: Optional[bool] = Field(True)
+    # Web Search (Groq Compound)
+    websearch_enabled: Optional[bool] = Field(False)
+    websearch_model: Optional[str] = Field("compound-beta")
+    websearch_max_tokens: Optional[int] = Field(300)
 
 class PiperCfg(BaseModel):
     model_config = ConfigDict(protected_namespaces=(), extra="allow")

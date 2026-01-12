@@ -1,288 +1,336 @@
-# 🧠 Conversational Bot
+# 🤖 Conversational Bot - Client-Server Architecture
 
-Private, local, low-latency voice assistant with hotword detection, ASR, **streaming LLM → streaming TTS**, barge-in, and a tidy `/vitals` dashboard.
-
----
-
-## ✨ What’s implemented (and how)
-
-* **Wake word with OpenWakeWord** — Uses the open-source OpenWakeWord engine with custom ONNX models for "hello robot" detection; falls back to text-based wake matching if needed.
-* **ASR with clean endpointing** — Faster-Whisper tuned for short turns; **standby** listens in tight windows; **active sessions** auto-detect RO/EN (standby favors EN for reliable hotwords).
-* **Streaming LLM → streaming TTS** — Real-time token streaming to speech; **time-to-first-token (TTFT)** is measured so replies feel snappy.
-* **Latency backchannel** — If TTFT exceeds ~2s, the bot plays "One moment…" / "Un moment…" so you know it's working.
-* **Audio hygiene** — System echo-cancel (AEC), noise suppression, high-pass filter; **AGC off** to avoid noise pumping & false VAD triggers.
-* **PyTorch stop keyword** — custom ONNX model (`audio.stop_keyword`) monitors the mic only while TTS talks and instantly cuts playback when you say "stop robot".
-* **No accidental "pa…" exits** — Session closes **only** on exact goodbyes (e.g., "ok bye", "gata", "la revedere").
-* **Observability** — Prometheus counters + a simple `/vitals` page for round-trip, ASR, TTFT, sessions, turns, errors.
-* **Double buffer for seamless TTS** — Prevents micro-pauses when the bot speaks; while buffer A plays, buffer B synthesizes the next chunk, then they alternate continuously.
-* **English <> Romanian** — Improved command & QA flow in English while keeping full Romanian support.
-* **Honest fallback** — If the bot doesn’t know, it says so (“I’m not sure about that yet, but I can look it up if you’d like.”).
-* **Graceful CTRL+C shutdown** — One keystroke stops TTS, flushes buffers, dumps a metrics snapshot, and closes all background listeners.
-
-### 🚀 Performance Optimizations
-
-* **LLM Warm-up** — At boot, performs a dummy request to load the model into RAM, reducing first-query latency from ~6-10s to ~0.3-2s.
-* **ASR Warm-up** — Runs a silent dummy transcription at startup to fully load Faster-Whisper into memory, speeding up the first real transcription.
-* **TTS Pre-caching** — Pre-generates WAV files for common phrases (acknowledgements, fillers) at boot for zero-latency playback.
-* **Conversation History** — Maintains context throughout the session, allowing follow-up questions like "And Germany?" after asking about France.
-* **Fallback Responses** — Configurable error messages for timeout, connection errors, and empty responses instead of crashing.
-* **Sentiment Detection** — LLM adapts responses based on user's emotional state (frustrated, curious, confused).
-* **Proactive Suggestions** — Bot offers helpful follow-up suggestions when appropriate.
+A bilingual (Romanian/English) voice-controlled conversational bot with a **client-server architecture** that allows distributing processing across multiple machines.
 
 ---
 
-## 🔧 Practical setup for users (do this)
+## 📋 Overview
 
-1. **Select the echo-cancelled mic** 
-   Use the `ec_mic` input (see **Linux audio** + **Audio routing** below).
+This project implements a voice assistant that can:
+- 🎤 Listen for wake words ("hello robot")
+- 🧏 Transcribe speech to text (ASR)
+- 🧠 Generate intelligent responses (LLM)
+- 🔊 Speak responses naturally (TTS)
+- 🛑 Handle interruptions ("stop robot", "goodbye robot")
+- 💬 **Stream LLM responses** for faster perceived latency
+- 🧠 **Maintain conversation history** (context-aware responses)
+- 🌐 **Auto web search** (compound-beta model decides when to search)
+- 🤖 **Motor command integration** via tagged responses `[MOTOR:action:param]`
+- 😊 **Sentiment detection** and proactive suggestions
+- 💾 **TTS caching** for instant playback of common phrases
 
-2. **Tune thresholds for your room**
-   - `min_speech_duration`: **1.0–1.2s** (utterances shorter than this are ignored)
-   - `silence_to_end`: **1200–1500 ms** (only for *active* session end)
-   - Keep **AGC off** in the OS/driver and inside AEC if exposed.
+### Architecture Modes
 
-3. **Keys & env**
-   - Put secrets in `.env` if needed.
-   - Activating a venv **does not** read `.env`. Either:
-     - use `python-dotenv` inside the app, **or**
-     - `export $(grep -v '^#' .env | xargs)` before `python -m src.app`.
+|        Mode       |             Description                   |
+|-------------------|-------------------------------------------|
+| **Local**         | All processing on one machine             |
+| **Client-Server** | Audio I/O on client, processing on server |
 
-4. **Run with structured logs**
-1.  **Select the echo-cancelled mic**
-    Use the `ec_mic` input (see **Linux audio** + **Audio routing** below).
-
-2.  **Tune thresholds for your room**
-    -   `min_speech_duration`: **1.0–1.2s** (utterances shorter than this are ignored)
-    -   `silence_to_end`: **1200–1500 ms** (only for *active* session end)
-    -   Keep **AGC off** in the OS/driver and inside AEC if exposed.
-
-3.  **Keys & env**
-    -   Put secrets in `.env` if needed.
-    -   Activating a venv **does not** read `.env`. Either:
-        -   use `python-dotenv` inside the app, **or**
-        -   `export $(grep -v '^#' .env | xargs)` before `python -m src.app`.
-
-4.  **Run with structured logs**
-    ```bash
-    LOG_LEVEL=INFO LOG_DIR=logs python -m src.app
-    ```
-    Press **CTRL+C once** to exit cleanly — it stops TTS, flushes buffers, dumps a metrics snapshot, and closes all background listeners (no need for `pkill`).
-
-5.  **(Optional) Wake Hotword**
-    OpenWakeWord with custom ONNX models for "hello robot"; if missing, text fallback is used.
-
-6.  **Stop command (PyTorch detector)**
-    `audio.stop_keyword` loads `voices/stop_keyword.onnx` (other vs stop classes) and runs only while TTS is speaking. Tune `logit_margin`, `prob_threshold`, or `hits_required` if you need stricter detection.
-    Ajustează `tts.backchannel.delay_ms/phrase_*` dacă vrei să schimbi filler-ul „One moment…” care acoperă latențele mari la TTFT.
-
-### Backchannel (TTFT filler)
-
-- Configure it in `configs/tts.yaml` (`backchannel.enabled`, `delay_ms`, `phrase_en`, `phrase_ro`).
-- In `src/app.py` we track TTFT with a `threading.Event`; if no token arrives within the threshold we play `tts.say("One moment...")` (or “Un moment…” for Romanian) before streaming the real reply.
-- The backchannel respects FastExit and stop signals, so it never fights barge-in or manual cancels.
-- This hides long LLM latencies (e.g., large models on CPU) without altering the rest of the speech pipeline.
-
-7. **Route audio correctly (AEC)** ➜ see **🔊 Audio routing (AEC) & pavucontrol** 
-   TTS → `Echo-Cancel Sink`, Microphone → `Echo-Cancel Source`. Verify and adjust with pavucontrol.
-
----
-
-## 🧩 Mini flow (pipeline)
-
-**Standby & Wake** → (OpenWakeWord **or** text fallback) 
-→ **Acknowledgement** (“Yes, I’m listening.” / “Da, te ascult.”) 
-→ **Record & endpoint** (VAD on silence; AEC + NS + HPF; AGC off) 
-→ **ASR** (Faster-Whisper; session auto RO/EN; standby favors EN) 
-→ **LLM** (streamed generation; **strict-facts** mode to reduce hallucinations) 
-→ **TTS** (streamed **sentence chunks**) 
-→ **Double buffer** (A plays, B synthesizes; swap) 
-→ **Barge-in** (if the user speaks, TTS stops; return to listening) 
-→ **Session end** (idle timeout **or** exact-match goodbye)
-
----
-
-## 🎙️ Audio Architecture (AEC explained)
-
-**Goal:** prevent the bot’s own TTS from being mis-detected as user speech.
-
-**How:** WebRTC AEC uses an **adaptive filter** to estimate the **echo path** (far-end playback → what the mic would hear) and subtracts it from the mic stream. It adapts in real time.
-
-**Extra guards we use:**
-* **Exact-match goodbye only** (no partial "pa..." exits).
-* **Voice-only gating**: prioritize voiced segments for barge-in (reduces knocks/claps).
-
----
-
-## 🧪 Biggest build obstacles (and fixes)
-
-* **Echo loop (bot hears itself)** → fixed with **system AEC** + selecting `ec_mic`, AGC off.
-* **False exits on “pa…”** → fixed via **exact-match goodbyes** only.
-* **TTS micro-pauses** → fixed with **double buffering**.
-* **Noise-triggered barge-in** → improved by **voiced-only gating** and higher minimum speech duration.
-
-> **BIGGEST OBSTACLE — reliable barge-in**: now solid with **WebRTC VAD** + tuned thresholds.
-
----
-
-## 🧰 Linux audio: create echo-cancel devices (PulseAudio / PipeWire)
-
-> Many modern distros run **PipeWire** with a PulseAudio compatibility layer. The commands below work in both setups if the PulseAudio modules are available.
-
-```bash
-# 1) Show current default sink/source
-pactl info | sed -n -e 's/^Default Sink: /Default Sink: /p' -e 's/^Default Source: /Default Source: /p'
-
-# 2) Unload any old echo-cancel (ignore errors if not loaded)
-pactl unload-module module-echo-cancel 2>/dev/null || true
-
-# 3) Load WebRTC echo-cancel on defaults
-DEFAULT_SINK="$(pactl info | awk -F': ' '/Default Sink/{print $2}')"
-DEFAULT_SOURCE="$(pactl info | awk -F': ' '/Default Source/{print $2}')"
-
-pactl load-module module-echo-cancel \
-  aec_method=webrtc \
-  aec_args="analog_gain_control=0 digital_gain_control=0" \
-  use_master_format=1 \
-  sink_master="$DEFAULT_SINK" \
-  source_master="$DEFAULT_SOURCE" \
-  sink_name=ec_speaker \
-  source_name=ec_mic
-
-# 4) Make the echo-cancelled mic default
-pactl set-default-source ec_mic
-
-# 5) Verify
-pactl list short sources | grep -Ei 'ec_mic|echo|cancel'
-pactl list short sinks   | grep -Ei 'ec_speaker|echo|cancel'
+```
+┌─────────────────────────┐         ┌─────────────────────────┐
+│       CLIENT            │   HTTP  │        SERVER           │
+│                         │◄───────►│                         │
+│  🎤 Audio Capture       │         │  🧏 ASR (Whisper)       │
+│  👂 Wake Word Detection │         │  🧠 LLM (Groq/Ollama)   │
+│  🔊 Audio Playback      │         │  🗣️ TTS (Edge TTS)      │
+│  🛑 Stop Keyword        │         │                         │
+└─────────────────────────┘         └─────────────────────────┘
 ```
 
 ---
 
-# 🔊 Audio routing (AEC) & pavucontrol
+## 🚀 Quick Start
 
-**Target:** route **TTS → `ec_speaker`** and **Mic → `ec_mic`** so AEC has the correct playback reference and barge-in won’t trigger on your own TTS.
+### Prerequisites
 
-## 1) Install pavucontrol (Ubuntu 22.04/24.04)
+- Python 3.11+
+- Ubuntu 22.04/24.04 (or compatible Linux)
+- Microphone and speakers
+- Internet connection (for Groq LLM and Edge TTS)
+
+### Installation
+
 ```bash
-sudo apt update
-sudo apt install -y pavucontrol pulseaudio-utils libwebrtc-audio-processing1
+
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Set API key for Groq
+echo "GROQ_API_KEY=your_key_here" > .env
 ```
 
-## 2) Run the app with forced routing
-```bash
-# (optional) load .env secrets
-test -f .env && export $(grep -v '^#' .env | xargs)
+### Running in Local Mode
 
-# launch using AEC devices
-PULSE_SINK=ec_speaker PULSE_SOURCE=ec_mic LOG_LEVEL=INFO LOG_DIR=logs \
-  ./.venv/bin/python -m src.app
+```bash
+# Set configs to local mode (in configs/*.yaml):
+# mode: local
+
+source .venv/bin/activate
+LOG_LEVEL=INFO python -m src.app
 ```
 
-## 3) Verify & adjust in pavucontrol (GUI)
+### Running in Client-Server Mode
+
+**Terminal 1 - Server:**
 ```bash
-pavucontrol &
-```
-- **Playback**: for the *python* process (TTS), choose **`Echo-Cancel Sink`** (ec_speaker).
-- **Recording**: for the *python* process (capture), choose **`Echo-Cancel Source`** (ec_mic).
-- Recommended volumes: `ec_speaker` **60–65%**, `ec_mic` **100–120%** (AGC off).
-
-> If `ec_speaker` / `ec_mic` don’t appear in the dropdown, re-run **Create echo-cancel devices** and reopen pavucontrol.
-> Once routing looks correct, stop the bot with `CTRL+C` and immediately run `tools/calibrate_audio.py` (see **Calibrate room thresholds**) so the thresholds match this setup.
-
-## 4) Quick CLI checks
-```bash
-# show defaults
-pactl info | sed -n -e 's/^Default Sink: //p' -e 's/^Default Source: //p'
-
-# ec_mic becomes RUNNING while the app is listening
-pactl list short sources | grep ec_mic
+source .venv/bin/activate
+python -m src.server.api --host 0.0.0.0 --port 8001
 ```
 
-## 5) Troubleshooting
-- **“No such entity” when setting volume on ec_*:** the AEC devices aren’t created — repeat the **Linux audio** section.
-- **Barge-in during TTS:** ensure in pavucontrol that TTS → `ec_speaker`, mic → `ec_mic`. Lower `ec_speaker` to ~60% and (temporarily) set in `configs/audio.yaml`:
-  ```yaml
-  barge_allow_during_tts: false
-  ```
-  Optionally raise thresholds:
-  ```yaml
-  barge_min_voice_ms: 1000-1500
-  barge_min_rms_dbfs: -20..-16
-  barge_highpass_hz: 240
-  ```
-
----
-
-## 🎛️ Calibrate room thresholds (`tools/calibrate_audio.py`)
-
-Use this wizard whenever you change speakers, room layout, or microphone gain so `configs/audio.yaml` reflects your real echo level.
-
-1. **Route once, reuse everywhere.** Launch the bot briefly, open `pavucontrol`, and set the `python` playback stream to `Echo-Cancel Sink` (~60–65 % volume) and the recording stream to `Echo-Cancel Source` (100 %). Stop the bot with a single `CTRL+C`.
-2. **Run the wizard (≈30 s tone).**
-   ```bash
-   PULSE_SOURCE=ec_mic PULSE_SINK=ec_speaker python tools/calibrate_audio.py --duration 30
-   ```
-   Stay silent while the tone plays; watch `pavucontrol` if you want to confirm the routing.
-3. **Apply the suggestions.** At the end you’ll get lines such as:
-   ```
-   barge_min_rms_dbfs: 24.3
-   barge_highpass_hz: 200
-   ```
-   Copy them into `configs/audio.yaml` (keep AGC off). These numbers are derived from the measured speaker leak, so barge-in triggers only when real speech is present.
-4. **Re-run after major changes.** If you move the robot, change speaker volume, or switch microphones, repeat the wizard so the thresholds stay accurate.
-
----
-
-## 🔄 Models & reasoning
-
-* **ASR**: OpenAI Whisper → **Faster-Whisper** (lower latency on CPU).
-* **LLM**: Llama (strong bilingual) + tests with **Qwen-2.5 3B** / **Phi-3 Mini 3.8B**.
-* **TTS**: **Piper** (fast, local). Fallback: `pyttsx3`.
-* **Containerization**: boosts reliability (consistent deps).
-* **“Teaser while thinking”**: dropped (complexity > small benefit).
-
----
-
-## 🗜️ Barge-in reliability
-
-* **WebRTC VAD** + tuned thresholds can pause TTS when **human voice** is detected.
-* The ONNX stop keyword detector watches 1s windows (0.5s hop) while TTS speaks and cuts playback when the "stop robot" logit margin/probability crosses your configured thresholds.
-
-**Pro-tips**
-* Raise `min_speech_duration` to avoid coughs/knocks.
-* Use voiced-only gating for barge-in.
-* Always select **`ec_mic`**.
-
----
-
-## 🧠 LLM prompt (edit to your goals)
-
-Tweak `configs/llm.yaml` (persona, safety rails, bilingual tone, tools, style, facts mode).
-
----
-
-## 🛠️ Commands recap
-
-* **Run app with logs**
+**Terminal 2 - Client:**
 ```bash
-LOG_LEVEL=INFO LOG_DIR=logs python -m src.app
+# Set configs to remote mode (in configs/*.yaml):
+# mode: remote
+# remote_host: "localhost"  # or server IP
+# remote_port: 8001
+
+source .venv/bin/activate
+LOG_LEVEL=INFO python -m src.app
 ```
 
-* **Load AEC** (see Linux audio)
-* **Set default mic to `ec_mic`**
-* **Verify**: `pactl list short sources | grep -Ei 'ec_mic|echo|cancel'`
+---
+
+## 📁 Project Structure
+
+```
+Conversational_Bot/
+├── configs/                    # Configuration files
+│   ├── asr.yaml               # ASR settings (Whisper)
+│   ├── llm.yaml               # LLM settings (Groq/Ollama)
+│   ├── tts.yaml               # TTS settings (Edge TTS)
+│   ├── audio.yaml             # Audio & barge-in settings
+│   └── wake.yaml              # Wake word settings
+│
+├── src/
+│   ├── app.py                 # 🎯 Main client application
+│   │
+│   ├── server/                # 🖥️ Server API
+│   │   ├── api.py             # Flask REST endpoints
+│   │   └── __init__.py
+│   │
+│   ├── asr/                   # 🧏 Speech-to-Text
+│   │   ├── interface.py       # ASRInterface, LocalASR, RemoteASR
+│   │   ├── engine_faster.py   # Faster-Whisper implementation
+│   │   └── __init__.py        # Factory: make_asr()
+│   │
+│   ├── llm/                   # 🧠 Language Model
+│   │   ├── interface.py       # LLMInterface, LocalLLM, RemoteLLM
+│   │   ├── engine.py          # Groq/Ollama/OpenAI implementation
+│   │   └── __init__.py        # Factory: make_llm()
+│   │
+│   ├── tts/                   # 🔊 Text-to-Speech
+│   │   ├── interface.py       # TTSInterface, LocalTTS, RemoteTTS
+│   │   ├── edge_backend.py    # Microsoft Edge TTS
+│   │   ├── engine.py          # Piper/pyttsx3 fallback
+│   │   └── __init__.py        # Factory: make_tts()
+│   │
+│   ├── audio/                 # 🎤 Audio processing
+│   │   ├── input.py           # Audio recording
+│   │   ├── barge.py           # Barge-in detection
+│   │   ├── vad.py             # Voice Activity Detection
+│   │   └── stop_keyword_detector.py
+│   │
+│   ├── wake/                  # 👂 Wake word detection
+│   │   └── openwakeword_engine.py
+│   │
+│   ├── core/                  # ⚙️ Core utilities
+│   │   ├── config.py          # Config loader
+│   │   ├── logger.py          # Logging setup
+│   │   └── fast_exit.py       # Goodbye detection
+│   │
+│   └── telemetry/             # 📊 Metrics
+│       └── metrics.py         # Prometheus metrics
+│
+├── voices/                    # ONNX voice models
+│   ├── hello_robot.onnx       # Wake word model
+│   ├── goodbye_robot.onnx     # Goodbye detection
+│   └── stop_keyword.onnx      # Stop command model
+│
+├── models/                    # ASR models (Whisper)
+├── tools/                     # Utility scripts
+└── requirements.txt           # Python dependencies
+```
 
 ---
 
-## 🔜 To-do (next iterations)
+## ⚙️ Configuration
 
-* **Instant feedback while thinking** — quick filler if the first token is slow, then keep streaming.
-* **Model bake-off** — compare **Phi-3 Mini (3.8B)** vs **Qwen-2.5 (3B)** vs current **Llama** (latency / fluency / bilingual accuracy).
+### Client-Server Mode Settings
+
+Each module (ASR, LLM, TTS) can be configured independently in their YAML files:
+
+```yaml
+# configs/asr.yaml
+mode: remote                # local | remote
+remote_host: "192.168.1.100"
+remote_port: 8001
+remote_timeout: 30.0
+```
+
+### Key Configuration Files
+
+|          File        |                 Description            |
+|----------------------|----------------------------------------|
+| `configs/asr.yaml`   | Whisper model size, language, mode     |
+| `configs/llm.yaml`   | Provider (groq/ollama), model, prompts |
+| `configs/tts.yaml`   | Voice selection, caching, mode         |
+| `configs/audio.yaml` | VAD, barge-in thresholds, stop keyword |
+| `configs/wake.yaml`  | Wake phrases, OpenWakeWord settings    |
 
 ---
 
-## 📸 Vitals & diagram placeholders
+## 🔌 Server API Endpoints
 
-![TTS AEC Schema](src/utils/tts_schema.png)
+|       Endpoint      | Method |         Description             |
+|---------------------|--------|---------------------------------|
+| `/health`           |   GET  | Server health check             |
+| `/transcribe`       |   POST | Transcribe audio (WAV → text)   |
+| `/transcribe_ro_en` |   POST | Bilingual transcription (RO/EN) |
+| `/generate`         |   POST | Generate LLM response           |
+| `/generate_stream`  |   POST | Stream LLM tokens               |
+| `/synthesize`       |   POST | Synthesize speech (text → MP3)  |
 
-![Robot Vitals](src/utils/vitals.png)
+---
+
+## 🔧 Technologies Used
+
+|   Component   |              Technology              |
+|---------------|--------------------------------------|
+| **ASR**       | Faster-Whisper (Whisper optimized)   |
+| **LLM**       | Groq Cloud (llama-3.3-70b) or Ollama |
+| **TTS**       | Microsoft Edge TTS (Neural voices)   |
+| **Wake Word** | OpenWakeWord (custom ONNX)           |
+| **Server**    | Flask (REST API)                     |
+| **Audio**     | sounddevice, WebRTC VAD              |
+
+---
+
+## ⚡ Advanced Features
+
+### LLM Streaming
+Responses are streamed token-by-token for instant feedback:
+```python
+# In configs/llm.yaml
+streaming: true  # Enables token-by-token generation
+```
+
+### Conversation History
+Maintains context across multiple turns:
+```yaml
+# In configs/llm.yaml
+history_enabled: true
+max_history_turns: 2  # Keeps last 2 user/assistant exchanges
+```
+
+### Auto Web Search (Compound-Beta)
+The `compound-beta` model automatically searches the web when needed:
+```yaml
+# In configs/llm.yaml
+model: "compound-beta"  # Auto web search when lacking info
+```
+⚠️ Note: compound-beta takes 3-8s due to web search vs. ~1s for llama-3.1-8b-instant
+
+### Motor Command Integration
+LLM can control robot motors via tagged responses:
+```
+User: "Raise your left hand"
+Bot: "Ok, done. [MOTOR:raise_hand:left]"
+```
+
+Supported tags:
+- `[MOTOR:raise_hand:left|right]` - Raise specified hand
+- `[MOTOR:wave:left|right]` - Wave hand
+- `[MOTOR:nod_head]` - Nod head
+- `[INTENT:question]` - Indicates user asked a question
+- `[INTENT:greeting]` - Greeting detection
+
+### TTS Caching
+Common phrases are pre-synthesized and cached for instant playback (\<100ms):
+```yaml
+# In configs/tts.yaml
+cache_enabled: true
+common_phrases:
+  - "Hello!"
+  - "I don't understand."
+  - "Let me think about that."
+```
+
+### Sentiment Detection
+Detects user sentiment and provides proactive suggestions:
+- Positive sentiment → Encouraging responses
+- Negative sentiment → Supportive tone
+- Neutral → Standard informative responses
+
+
+---
+
+## 🌐 Deployment on Two Machines
+
+### Step 1: Clone on both machines
+
+```bash
+# On both laptops:
+git clone https://github.com/Delia63/Conversational_Robot.git
+cd Conversational_Robot/Conversational_Bot
+git checkout client-server
+pip install -r requirements.txt
+```
+
+### Step 2: Configure server (Laptop 2)
+
+```bash
+# Start server listening on all interfaces
+python -m src.server.api --host 0.0.0.0 --port 8001
+```
+
+### Step 3: Configure client (Laptop 1)
+
+Edit `configs/asr.yaml`, `configs/llm.yaml`, `configs/tts.yaml`:
+```yaml
+mode: remote
+remote_host: "192.168.1.X"  # Replace with Laptop 2 IP
+remote_port: 8001
+```
+
+```bash
+# Start client
+LOG_LEVEL=INFO python -m src.app
+```
+python -m src.server.api --host 127.0.0.1 --port 8001
+---
+
+## 📊 Performance Metrics
+
+|    Metric       |         Typical Value      |
+|-----------------|----------------------------|
+| ASR Latency     | ~3-5s (Whisper small, CPU) |
+| LLM First Token | ~200-300ms (Groq)          |
+| Round-trip      | ~2-3s                      |
+| TTS Cache Play  | <100ms                     |
+
+Access metrics at: `http://localhost:9108/vitals`
+
+---
+
+## 🎯 Voice Commands
+
+|     Command     |        Action             |
+|-----------------|---------------------------|
+| "Hello robot"   | Wake up and start listenin|
+| "Goodbye robot" | End session               |
+| "Stop robot"    | Stop current TTS playback |
+
+---
+
+## 📝 License
+
+This project is for educational and research purposes.
+
+---
+
+## 🔗 Related Files
+
+- [INSTALL.md](INSTALL.md) - Detailed installation guide
+- [FEATURES.md](FEATURES.md) - Feature documentation
+- [LIMITATIONS.md](LIMITATIONS.md) - Known limitations

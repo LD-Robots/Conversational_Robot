@@ -1,8 +1,8 @@
 fast_exit:
   enabled: true
-  phrases: ["goodbye robot"]
-  fuzzy: 90            
-  debounce_ms: 120     # anti-spam
+  phrases: ["goodbye robot", "bye bye", "see you", "la revedere"]
+  fuzzy: 80            
+  debounce_ms: 1500    # anti-spam și ecou
   min_chars: 2
   confirm_tts:
     en: "See you later!"
@@ -10,11 +10,32 @@ fast_exit:
     default: "See you later!"
   phrase_langs:
     "goodbye robot": "en"
-  use_barge_check: true
+    "bye bye": "en"
+    "la revedere": "ro"
+  use_barge_check: false
   hotword:
     enabled: true
     engine: openwakeword
-    model_path: "voices/goodbye_robot.onnx"
-    threshold: 0.55
-    min_gap_ms: 1200
-    label: "goodbye robot"
+    threshold: 0.6
+    min_gap_ms: 5000
+    keywords:
+      goodbye_robot:
+        model_path: "voices/goodbye_robot.onnx"
+        threshold: 0.4
+        cooldown_ms: 5000
+        label: "goodbye_robot"
+      bai_bai:
+        model_path: "voices/bai_bai.onnx"
+        threshold: 0.6
+        cooldown_ms: 5000
+        label: "bai_bai"
+      see_iuu:
+        model_path: "voices/see_iuu.onnx"
+        threshold: 0.5
+        cooldown_ms: 5000
+        label: "see_iuu"
+      la_revedere:
+        model_path: "voices/Lah_reh_veh_deh_reh.onnx"
+        threshold: 0.3
+        cooldown_ms: 5000
+        label: "la_revedere"
