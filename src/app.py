@@ -74,6 +74,14 @@ def _detect_response_lang(text: str) -> str:
     return "en"
 
 
+def _strip_tags(text: str) -> str:
+    """Remove internal tags like [INTENT:...] and [MOTOR:...] from text before TTS."""
+    import re
+    # Strip [INTENT:...], [MOTOR:...], etc.
+    cleaned = re.sub(r'\[(?:INTENT|MOTOR|ACTION):[^\]]+\]', '', text)
+    return cleaned.strip()
+
+
 def _normalize_phrase(value: str) -> str:
     try:
         return normalize_text(value or "").lower().strip()
@@ -571,7 +579,34 @@ def main():
                     response_lang = user_lang
                     logger.info(f"🌐 TTS va folosi limba input-ului: {response_lang}")
                     
-                    final_token_iter = token_iter
+                    # Wrap token iterator to strip tags before TTS
+                    def _strip_tags_from_stream(gen):
+                        """Strip [INTENT:...] and [MOTOR:...] tags from stream."""
+                        buffer = ""
+                        for tok in gen:
+                            buffer += tok
+                            # Check if we have a complete tag to strip
+                            import re
+                            # Find and remove all tags
+                            cleaned = re.sub(r'\[(?:INTENT|MOTOR|ACTION):[^\]]+\]', '', buffer)
+                            if cleaned != buffer:
+                                # Tag was found and removed
+                                buffer = cleaned
+                                # Yield the cleaned part
+                                if cleaned:
+                                    yield cleaned
+                                    buffer = ""
+                            else:
+                                # No tag found, yield the token
+                                if '[' not in tok:  # Normal token without potential tag
+                                    yield tok
+                                    buffer = ""
+                                # else: might be start of tag, keep buffering
+                        # Yield any remaining buffer
+                        if buffer:
+                            yield _strip_tags(buffer)
+                    
+                    final_token_iter = _strip_tags_from_stream(token_iter)
 
                     state = BotState.SPEAKING
                     tts_speak_calls.inc()
