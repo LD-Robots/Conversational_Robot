@@ -23,6 +23,7 @@ from src.llm import make_llm
 from src.tts import make_tts
 from src.core.wake import WakeDetector
 from src.wake.openwakeword_engine import OpenWakeWordEngine
+from src.wake.porcupine_engine import PorcupineEngine
 from src.utils.textnorm import normalize_text
 from src.audio.openwakeword_listener import OpenWakeWordListener
 from src.llm.stream_shaper import shape_stream  # netezire stream LLM→TTS
@@ -128,13 +129,17 @@ def main():
     ack_ro = ack_cfg.get("ro", ack_en)
 
     openwake_cfg = wake_cfg.get("openwakeword") or {}
+    porcupine_cfg = wake_cfg.get("porcupine") or {}
     wake_keyword = (openwake_cfg.get("wake_keyword") or "hello_robot").strip() or "hello_robot"
+    porcupine_keyword = (porcupine_cfg.get("wake_keyword") or "").strip()
     wake_lang = _lang_from_code(openwake_cfg.get("wake_lang") or "en")
     requested_engine = (os.getenv("WAKE_ENGINE") or wake_cfg.get("engine") or "").strip().lower()
     openwake_engine: Optional[OpenWakeWordEngine] = None
+    porcupine_engine: Optional[PorcupineEngine] = None
     active_engine = "text"
 
-    if requested_engine in ("openwakeword", "openwake"):
+    # Initialize OpenWakeWord
+    if requested_engine in ("openwakeword", "openwake", "both", "all"):
         try:
             openwake_engine = OpenWakeWordEngine(cfg["audio"], openwake_cfg, logger)
             if openwake_engine.has_keyword(wake_keyword):
@@ -144,17 +149,41 @@ def main():
         except Exception as e:
             logger.warning(f"OpenWakeWord indisponibil: {e} — revin pe wake via text (ASR).")
             openwake_engine = None
-    elif requested_engine not in ("", "text"):
+    
+    # Initialize Porcupine  
+    if requested_engine in ("porcupine", "both", "all"):
+        try:
+            porcupine_engine = PorcupineEngine(cfg["audio"], porcupine_cfg, logger)
+            if porcupine_engine.available_keywords():
+                if active_engine == "openwakeword":
+                    active_engine = "both"
+                else:
+                    active_engine = "porcupine"
+                if not porcupine_keyword:
+                    porcupine_keyword = porcupine_engine.available_keywords()[0]
+        except Exception as e:
+            logger.warning(f"Porcupine indisponibil: {e}")
+            porcupine_engine = None
+    elif requested_engine not in ("", "text", "openwakeword", "openwake", "porcupine", "both", "all"):
         logger.warning(f"Wake engine '{requested_engine}' nu este suportat — folosesc text wake.")
 
     if active_engine == "openwakeword":
         logger.info("🔔 Wake engine: openwakeword")
-        logger.info(f"🎧 Standby (OpenWakeWord) — model pentru „{wake_keyword}” (lang={wake_lang}).")
-        logger.info("🤖 Standby: spune „hello robot” ca să pornești conversația.")
+        logger.info(f"🎧 Standby (OpenWakeWord) — model pentru '{wake_keyword}' (lang={wake_lang}).")
+        logger.info("🤖 Standby: spune 'hello robot' ca să pornești conversația.")
     else:
-        logger.info("🔔 Wake engine: text")
-        logger.info("ℹ️ Wake fallback: recunosc wake phrase-ul din transcript (ASR).")
-        logger.info("🤖 Standby: spune „hello robot” ca să pornești conversația.")
+        if active_engine == "porcupine":
+            logger.info("🔔 Wake engine: porcupine")
+            logger.info(f"🎧 Standby (Porcupine) — model pentru '{porcupine_keyword}'.")
+            logger.info(f"🤖 Standby: spune '{porcupine_keyword.replace('_', ' ')}' ca să pornești conversația.")
+        elif active_engine == "both":
+            logger.info("🔔 Wake engine: openwakeword + porcupine")
+            logger.info(f"🎧 Standby — OpenWakeWord: '{wake_keyword}', Porcupine: '{porcupine_keyword}'.")
+            logger.info("🤖 Standby: spune 'hello robot' sau 'hey robot' ca să pornești conversația.")
+        else:
+            logger.info("🔔 Wake engine: text")
+            logger.info("ℹ️ Wake fallback: recunosc wake phrase-ul din transcript (ASR).")
+            logger.info("🤖 Standby: spune 'hello robot' ca să pornești conversația.")
 
     state = BotState.LISTENING
     fast_exit_cfg = (cfg.get("fast_exit") or cfg.get("core", {}).get("fast_exit") or {})
@@ -170,25 +199,30 @@ def main():
             logger.warning(f"Goodbye hotword engine '{goodbye_engine}' nesuportat — dezactivez.")
             use_fast_exit_hotword = False
         else:
+            # Support both single model_path and keywords format
             bye_path = (
                 os.getenv("OPENWAKE_GOODBYE_MODEL", "").strip()
                 or str(fast_exit_hotword_cfg.get("model_path") or "").strip()
             )
-            if not bye_path:
-                logger.warning("🔕 Goodbye hotword (openwakeword): lipsește model_path.")
+            keywords_cfg = fast_exit_hotword_cfg.get("keywords") or {}
+            
+            if not bye_path and not keywords_cfg:
+                logger.warning("🔕 Goodbye hotword (openwakeword): lipsește model_path sau keywords.")
                 use_fast_exit_hotword = False
-            elif not Path(bye_path).expanduser().exists():
+            elif bye_path and not Path(bye_path).expanduser().exists():
                 logger.warning(f"🔕 Goodbye hotword model lipsă: {bye_path}")
                 use_fast_exit_hotword = False
             else:
                 fast_exit_listener_cfg = dict(fast_exit_hotword_cfg)
-                fast_exit_listener_cfg["model_path"] = str(Path(bye_path).expanduser())
-                fast_exit_listener_cfg.setdefault("label", fast_exit_hotword_cfg.get("label") or "goodbye robot")
+                if bye_path:
+                    fast_exit_listener_cfg["model_path"] = str(Path(bye_path).expanduser())
+                    fast_exit_listener_cfg.setdefault("label", fast_exit_hotword_cfg.get("label") or "goodbye robot")
+                # keywords are passed through as-is
                 fast_exit_listener_cfg.setdefault("threshold", 0.5)
                 fast_exit_listener_cfg.setdefault("min_gap_ms", fast_exit_listener_cfg.get("cooldown_ms", 1200))
 
     if use_fast_exit_hotword and fast_exit_listener_cfg:
-        logger.info("🟥 Goodbye hotword disponibil (openwakeword): spune „{label}” ca să închizi sesiunea.".format(
+        logger.info("🟥 Goodbye hotword disponibil (openwakeword): spune '{label}' ca să închizi sesiunea.".format(
             label=fast_exit_listener_cfg.get("label", "goodbye robot")))
     elif fast_exit_hotword_cfg.get("enabled"):
         logger.info("🟥 Goodbye hotword dezactivat (config incomplet sau eroare).")
@@ -234,15 +268,43 @@ def main():
         while not shutdown_requested():
             # —— STANDBY: OpenWakeWord sau fallback text ——
             if active_engine == "openwakeword" and openwake_engine:
-                ok = openwake_engine.wait_for(wake_keyword, timeout_seconds=0.25)
+                detected_kw = openwake_engine.wait_for_any(timeout_seconds=0.25)
                 if shutdown_requested():
                     break
-                if not ok:
+                if not detected_kw:
                     time.sleep(0.1)
                     continue
                 heard_lang = wake_lang
                 wake_triggers.inc()
-                logger.info(f"🔔 Wake phrase detectată (openwakeword:{wake_keyword})")
+                logger.info(f"🔔 Wake phrase detectată (openwakeword:{detected_kw})")
+            elif active_engine == "porcupine" and porcupine_engine:
+                detected = porcupine_engine.wait_for_any(timeout_seconds=0.25)
+                if shutdown_requested():
+                    break
+                if not detected:
+                    time.sleep(0.1)
+                    continue
+                heard_lang = "en"  # Porcupine models are English
+                wake_triggers.inc()
+                logger.info(f"🔔 Wake phrase detectată (porcupine:{detected})")
+            elif active_engine == "both" and openwake_engine and porcupine_engine:
+                # Check both engines with short timeouts
+                detected_oww = openwake_engine.wait_for_any(timeout_seconds=0.1)
+                if detected_oww:
+                    heard_lang = wake_lang
+                    wake_triggers.inc()
+                    logger.info(f"🔔 Wake phrase detectată (openwakeword:{detected_oww})")
+                else:
+                    detected_porc = porcupine_engine.wait_for_any(timeout_seconds=0.1)
+                    if detected_porc:
+                        heard_lang = "en"
+                        wake_triggers.inc()
+                        logger.info(f"🔔 Wake phrase detectată (porcupine:{detected_porc})")
+                    else:
+                        if shutdown_requested():
+                            break
+                        time.sleep(0.05)
+                        continue
             else:
                 # —— STANDBY: text-ASR + fuzzy match ——
                 if shutdown_requested():
@@ -307,7 +369,7 @@ def main():
                 "min_valid_seconds": 0.35,       # permiți fraze foarte scurte
             })
 
-            logger.info("🟢 Sesiune activă (spune „goodbye robot” ca să închizi).")
+            logger.info("🟢 Sesiune activă (spune 'goodbye robot' ca să închizi).")
             state = BotState.LISTENING
             sessions_started.inc()
 
@@ -323,23 +385,13 @@ def main():
 
             if use_fast_exit_hotword and fast_exit_listener_cfg:
                 def _goodbye_cb(_label: str, *_a):
-                    logger.info("🔴 Goodbye hotword detectat — redau mesaj de la revedere.")
+                    logger.info("🔴 Goodbye hotword detectat — închidem sesiunea.")
                     # Oprește TTS-ul curent dacă vorbește
                     try:
                         tts.stop()
                     except Exception:
                         pass
-                    # Redă mesajul de goodbye
-                    try:
-                        if not tts.say_cached("goodbye_en", lang="en"):
-                            tts.say("Goodbye! Have a great day!", lang="en")
-                        # Așteaptă să termine de vorbit
-                        import time as _time
-                        while tts.is_speaking():
-                            _time.sleep(0.05)
-                    except Exception as e:
-                        logger.warning(f"Goodbye TTS error: {e}")
-                    # Acum trigger exit
+                    # Trigger exit - va reda mesajul de goodbye
                     fast_exit.trigger_exit("goodbye-hotword")
                 try:
                     goodbye_listener = OpenWakeWordListener(
@@ -349,13 +401,18 @@ def main():
                         on_detect=_goodbye_cb,
                     )
                     goodbye_listener.start()
-                    logger.info("🟥 Goodbye hotword activ (openwakeword): spune „goodbye robot” ca să închizi sesiunea.")
+                    logger.info("🟥 Goodbye hotword activ (openwakeword): spune 'goodbye robot' ca să închizi sesiunea.")
                 except Exception as e:
                     logger.warning(f"🔕 Goodbye hotword dezactivat pentru sesiunea curentă: {e}")
                     goodbye_listener = None
 
             try:
                 while time.time() - last_activity < session_idle_seconds:
+                    # Check if goodbye hotword was triggered
+                    if fast_exit.pending():
+                        logger.info("🔴 FastExit: sesiune închisă (revenire în standby).")
+                        break
+                    
                     user_wav = data_dir / "cache" / "user_utt.wav"
                     path_user, dur = record_until_silence(ask_cfg, user_wav, logger)
 
@@ -563,6 +620,8 @@ def main():
                 break
             logger.info("⏳ Revenire în standby (spune din nou wake-phrase pentru o nouă sesiune).")
             sessions_ended.inc()
+            # Pauză pentru a lăsa ecoul TTS să se estompeze înainte de a asculta wake words
+            time.sleep(2.0)
 
     except KeyboardInterrupt:
         request_shutdown("CTRL+C detectat")
@@ -580,6 +639,11 @@ def main():
         try:
             if openwake_engine:
                 openwake_engine.close()
+        except Exception:
+            pass
+        try:
+            if porcupine_engine:
+                porcupine_engine.close()
         except Exception:
             pass
 
