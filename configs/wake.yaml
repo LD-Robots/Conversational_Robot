@@ -1,4 +1,4 @@
-engine: both
+engine: openwakeword
 
 acknowledgement:
   en: "Yes, I'm listening."
@@ -15,6 +15,8 @@ wake_phrases:
 threshold: 65
 
 openwakeword:
+  melspec_model_path: "voices/melspectrogram.onnx"
+  embedding_model_path: "voices/embedding_model.onnx"
   wake_keyword: hello_robot
   keywords:
     hello_robot:
@@ -42,10 +44,3 @@ openwakeword:
       threshold: 0.5
       cooldown_ms: 2000
 
-porcupine:
-  access_key: "n4K2eEH2X6ddCoQwXw/pCEiTUvJBmUG+BvxIDuVmZ7di0Z04k3G8jA=="
-  keywords:
-    hey_robot:
-      model_path: "voices/hey-robot_en_linux_v4_0_0.ppn"
-      sensitivity: 0.5
-      cooldown_ms: 2000
