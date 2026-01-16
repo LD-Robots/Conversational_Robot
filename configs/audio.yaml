@@ -35,7 +35,7 @@ stop_keyword:
   model_path: "voices/stop_keyword.onnx"
   logit_margin: 2.5        # crescut de la 1.2 - ignoră vocea robotului
   prob_threshold: 0.95     # crescut de la 0.85 - necesită probabilitate foarte mare
-  hits_required: 2         # crescut de la 1 - necesită 2 detecții consecutive
+  hits_required: 1        # crescut de la 1 - necesită 2 detecții consecutive
   debug: false
 
 # ——— Text-based stop (ASR) ———
