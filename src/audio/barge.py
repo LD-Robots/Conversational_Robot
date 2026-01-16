@@ -107,15 +107,25 @@ class BargeInListener:
         self._debug_interval_ms = int(cfg_audio.get("barge_debug_interval_ms", 120))
         self._last_meter_ms: int = 0
         self.stop_detector = None
+        self.oww_stop_detector = None
         stop_kw_cfg = cfg_audio.get("stop_keyword") or {}
         if stop_kw_cfg.get("enabled"):
             try:
                 from .stop_keyword_detector import StopKeywordDetector
-
                 self.stop_detector = StopKeywordDetector(stop_kw_cfg, self.sr, logger)
             except Exception as exc:
                 self.stop_detector = None
                 self.log.warning(f"Stop keyword detector dezactivat: {exc}")
+
+        # OpenWakeWord-based stop detector (for models like shut_up.onnx)
+        oww_stop_cfg = cfg_audio.get("oww_stop") or {}
+        if oww_stop_cfg.get("enabled"):
+            try:
+                from .oww_stop_detector import OWWStopDetector
+                self.oww_stop_detector = OWWStopDetector(oww_stop_cfg, self.sr, logger)
+            except Exception as exc:
+                self.oww_stop_detector = None
+                self.log.warning(f"OWW Stop detector dezactivat: {exc}")
 
         self.log.info(f"🎯 Barge-in inteligent: min_voice={self.min_voice_ms}ms, "
                       f"rms_thr={self.min_rms_dbfs}dB, hp={self.highpass_hz}Hz, "
@@ -277,6 +287,17 @@ class BargeInListener:
                         f"🛑 Stop keyword detectat (p_stop={stop_detection.probability:.2f}, "
                         f"logits other={other_logit:.2f} stop={stop_logit:.2f})"
                     )
+                    return True
+
+            # OWW-based stop detector (shut up, etc.)
+            if self.oww_stop_detector:
+                oww_stop = self.oww_stop_detector.process_block(pcm_i16)
+                if oww_stop:
+                    now_stop = int(time.monotonic() * 1000)
+                    self._last_trigger_ms = now_stop
+                    self._last_user_voice_ms = now_stop
+                    self._voiced_ms = 0
+                    self.log.info(f"🛑 OWW Stop detectat: '{oww_stop.keyword}' (score={oww_stop.score:.2f})")
                     return True
 
             # Verifică dacă e voce umană (nu zgomot/eco)

@@ -46,6 +46,19 @@ stop_text_max_ms: 1500
 stop_text_overlap_ms: 120
 stop_text_debug: true
 
+# ——— OWW Stop (OpenWakeWord-based stop phrases like "shut up") ———
+oww_stop:
+  enabled: true
+  threshold: 0.5
+  hits_required: 2
+  cooldown_ms: 1500
+  debug: false
+  models:
+    shut_up:
+      model_path: "voices/shut__up.onnx"
+      label: "shut__up"
+      threshold: 0.5
+
 # ——— Audio device & AEC ———
 prefer_echo_cancel: true
 input_device_hint: "pipewire"        # selectează device-ul PipeWire (default ec_mic)
