@@ -52,7 +52,7 @@ class LLMInterface(ABC):
 class LocalLLM(LLMInterface):
     """
     Implementare locală folosind LLMLocal existent.
-    Suportă Ollama, Groq, OpenAI.
+    Suportă Ollama, Groq.
     """
     
     def __init__(self, engine):

@@ -50,7 +50,7 @@ stop_text_debug: true
 oww_stop:
   enabled: true
   threshold: 0.5
-  hits_required: 2
+  hits_required: 1
   cooldown_ms: 1500
   debug: false
   models:

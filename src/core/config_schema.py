@@ -21,7 +21,7 @@ class AudioCfg(BaseModel):
 
 class ASRCfg(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
-    provider: str = Field("faster")                 # faster | openai
+    provider: str = Field("faster")                 # only faster-whisper supported
     model_size: str = Field("base")
     compute_type: Optional[str] = Field("int8")     # int8 | float16 | int8_float16
     device: str = Field("cpu")                      # cpu | cuda

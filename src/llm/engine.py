@@ -42,14 +42,7 @@ class LLMLocal:
         self.websearch_model = self.cfg.get("websearch_model", "compound-beta")
         self.websearch_max_tokens = int(self.cfg.get("websearch_max_tokens", 300))
 
-        self._openai = None
-        if self.provider == "openai":
-            try:
-                from openai import OpenAI
-                self._openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            except Exception as e:
-                self.log.error(f"OpenAI client indisponibil: {e}. Revin pe 'rule'.")
-                self.provider = "rule"
+
 
         # Groq client
         self._groq = None
@@ -114,8 +107,7 @@ class LLMLocal:
                 return self._rule_based(user_text, lang_hint)
             if self.provider == "ollama":
                 return self._ollama_http(user_text, lang_hint, mode=mode)
-            if self.provider == "openai" and self._openai:
-                return self._openai_chat(user_text, lang_hint)
+
             return "No LLM provider configured."
 
     def generate_stream(self, user_text: str, lang_hint: str = "en", mode: Optional[str] = None, history: Optional[List[Dict]] = None):
@@ -261,22 +253,7 @@ class LLMLocal:
             self.log.error(f"Ollama stream error: {e}")
             yield self._get_fallback("error", lang_hint) or "Technical error. Try again."
 
-    def _openai_chat(self, user_text: str, lang_hint: str) -> str:
-        try:
-            msg = [
-                {"role": "system", "content": self.system or "You are concise."},
-                {"role": "user", "content": f"[lang={lang_hint}] {user_text}"},
-            ]
-            r = self._openai.chat.completions.create(
-                model=self.cfg.get("model", "gpt-4o-mini"),
-                messages=msg,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
-            return (r.choices[0].message.content or "").strip()
-        except Exception as e:
-            self.log.error(f"OpenAI error: {e}")
-            return self._rule_based(user_text, lang_hint)
+
 
     def _groq_stream(self, user_text: str, lang_hint: str, mode: str = "precise", history: Optional[List[Dict]] = None):
         """Streaming cu API-ul Groq. Suportă web search prin Groq Compound."""
@@ -348,7 +325,7 @@ class LLMLocal:
             "album", "song", "concert", "tour", "netflix", "spotify",
             # English - tech & business
             "iphone", "android", "google", "apple", "microsoft", "tesla",
-            "chatgpt", "openai", "cryptocurrency", "bitcoin", "gpt-4", "gpt-5",
+            "chatgpt", "cryptocurrency", "bitcoin", "gpt-4", "gpt-5",
             # Romanian - time-sensitive
             "știri", "stiri", "azi", "acum", "recent", "ultima", "moment",
             "vreme", "preț", "pret", "scor", "rezultat", "valoare", "curs",

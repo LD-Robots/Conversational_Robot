@@ -50,15 +50,5 @@ def make_asr(cfg_asr: dict, logger=None) -> ASRInterface:
         )
         return LocalASR(engine)
         
-    elif provider == "openai":
-        from .engine_openai import ASREngine
-        engine = ASREngine(
-            model_size=cfg_asr.get("model_size", "base"),
-            compute_type=cfg_asr.get("compute_type"),
-            device=cfg_asr.get("device", "cpu"),
-            force_language=cfg_asr.get("force_language"),
-        )
-        return LocalASR(engine)
-        
     else:
         raise ValueError(f"Unknown ASR provider: {provider}")

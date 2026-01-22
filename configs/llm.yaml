@@ -1,4 +1,4 @@
-provider: groq                    # ollama | groq | openai
+provider: groq                    # ollama | groq
 host: "http://127.0.0.1:11434"    # doar pentru ollama
 model: "compound-beta"            # Groq Compound - auto web search când e necesar
 max_tokens: 300                   # mai multe tokens pentru răspunsuri cu web search
