@@ -3,7 +3,7 @@ host: "http://127.0.0.1:11434"    # doar pentru ollama
 model: "compound-beta"            # Groq Compound - auto web search când e necesar
 max_tokens: 300                   # mai multe tokens pentru răspunsuri cu web search
 temperature: 0.4
-language_policy: auto
+language_policy: en
 default_mode: precise         
 strict_facts: false  #daca nu stie spune ca nu stie 
 

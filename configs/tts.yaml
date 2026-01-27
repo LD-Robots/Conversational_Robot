@@ -23,7 +23,7 @@ remote_port: 8001             # Portul serverului
 remote_timeout: 30.0          # Timeout în secunde
 
 # Edge TTS settings (Microsoft Neural Voices)
-edge_voice_en: "en-US-AndreiMultilingualNeural"    # Andrei - voce multilingvă masculină
+edge_voice_en: "en-GB-RyanNeural"    # Ryan - voce britanică masculină
 edge_voice_ro: "ro-RO-EmilNeural"     # Emil - voce românească
 edge_rate: "+0%"                       # viteza vocii (-50% la +100%)
 edge_pitch: "+0Hz"                     # pitch-ul vocii
