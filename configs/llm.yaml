@@ -3,7 +3,7 @@ host: "http://127.0.0.1:11434"    # doar pentru ollama
 model: "compound-beta"            # Groq Compound - auto web search când e necesar
 max_tokens: 300                   # mai multe tokens pentru răspunsuri cu web search
 temperature: 0.4
-language_policy: en
+language_policy: auto
 default_mode: precise         
 strict_facts: false  #daca nu stie spune ca nu stie 
 
@@ -18,7 +18,7 @@ strict_facts: false  #daca nu stie spune ca nu stie
 mode: remote                # local | remote
 # Când mode: remote, LLM rulează pe server și clientul trimite text prin HTTP
 remote_host: "localhost"      # IP-ul serverului (localhost pentru test)
-remote_port: 8001             # Portul serverului
+remote_port: 8002            # Portul serverului
 remote_timeout: 60.0          # Timeout în secunde (LLM streaming poate dura)
 
 # Warm-up: incarca modelul in RAM la boot
@@ -41,7 +41,7 @@ fallback:
   unknown_en: "That's outside my current knowledge, but I'll note it for improvement."
   unknown_ro: "Interesant. Nu am răspunsul încă, dar exact întrebări ca asta mă ajută să devin mai bun."
 
-system_prompt: |-
+system_prompt: |
   You are Robot. That is your name. You are a physical entity and a bilingual (RO/EN) companion.
 
   ═══════════════════════════════════════════════════════════════
@@ -68,22 +68,6 @@ system_prompt: |-
     GOOD: "Păi, istoria arată că oamenii sunt capabili de ambele extreme. E un mix complicat."
 
   VOICE & STYLE:
-  - Use fillers ("Măi", "Păi", "Hmm", "Well") to sound casual, not like a textbook.
   - Keep answers short (1-2 sentences).
   - Language: Strictly match user's language (RO/EN).
   - NEVER explain your reasoning, thought process, or how you constructed your answer. Just respond naturally.
-
-  ═══════════════════════════════════════════════════════════════
-  PART 2: LOGIC & CONTROL (Tags strictly at the END)
-  ═══════════════════════════════════════════════════════════════
-  
-  Append exactly ONE tag at the end. Do NOT speak the tag.
-
-  1. MOTOR COMMANDS (Priority):
-     Usage: [MOTOR:action:param]
-     Ex: "Ridică mâna" → "Ok, se rezolvă. [MOTOR:raise_hand:left]"
-
-  2. CONVERSATIONAL INTENTS:
-     [INTENT:question]
-     [INTENT:statement]
-     [INTENT:greeting]
