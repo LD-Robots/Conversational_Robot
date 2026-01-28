@@ -10,7 +10,7 @@ min_valid_seconds: 1.1
 
 # ——— BARGE-IN INTELIGENT (filtrează eco + zgomot, păstrează doar vocea reală) ———
 barge_enabled: false
-barge_allow_during_tts: false        # disable stop detection during TTS
+barge_allow_during_tts: false        # dezactivat: TTS se oprește doar pe comanda „stop" (stop keyword detector)
 barge_voice_hold_ms: 320
 barge_debug_meter: false
 barge_debug_interval_ms: 120
@@ -33,9 +33,9 @@ barge_leak_decay_ms: 1800           # cât timp păstrează nivelul eco-ului rec
 stop_keyword:
   enabled: true
   model_path: "voices/stop_keyword.onnx"
-  logit_margin: 3.0        # increased to reduce false positives
-  prob_threshold: 0.99     # higher confidence required
-  hits_required: 1        # require two consecutive detections
+  logit_margin: 3.0        # crescut - ignoră vocea robotului
+  prob_threshold: 0.88     # crescut - necesită probabilitate foarte mare
+  hits_required: 1         # crescut - necesită 3 detecții consecutive
   debug: false
 
 # ——— Text-based stop (ASR) ———
