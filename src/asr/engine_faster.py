@@ -82,6 +82,7 @@ class ASREngine:
         segments, info = self.model.transcribe(
             str(wav_path),
             language=language,
+            task="transcribe",  # Forțează transcriere, nu traducere
             beam_size=self.beam_size,
             temperature=0.0,
             vad_filter=use_vad,
@@ -131,6 +132,16 @@ class ASREngine:
                     raise
             en_text, _, _, en_score = safe("en")
             ro_text, _, _, ro_score = safe("ro")
+
+        # Bonus pentru diacritice românești (ă, â, î, ș, ț)
+        ro_diacritics = "ăâîșțĂÂÎȘȚ"
+        has_diacritics = any(c in ro_text for c in ro_diacritics)
+        if has_diacritics:
+            ro_score += 0.5  # Bonus semnificativ pentru diacritice
+
+        # Debug logging
+        if self.log:
+            self.log.info(f"🔍 Dual-pass ASR: EN='{en_text[:50]}...' score={en_score:.2f} | RO='{ro_text[:50]}...' score={ro_score:.2f} (diacritics={has_diacritics})")
 
         if (ro_score > en_score) and ro_text:
             return {"text": ro_text, "lang": "ro", "language_probability": 1.0}

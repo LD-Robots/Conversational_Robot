@@ -34,7 +34,7 @@ stop_keyword:
   enabled: true
   model_path: "voices/stop_keyword.onnx"
   logit_margin: 3.0        # increased to reduce false positives
-  prob_threshold: 0.99     # higher confidence required
+  prob_threshold: 0.85    # higher confidence required
   hits_required: 1        # require two consecutive detections
   debug: false
 

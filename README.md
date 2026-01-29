@@ -75,7 +75,7 @@ LOG_LEVEL=INFO python -m src.app
 **Terminal 1 - Server:**
 ```bash
 source .venv/bin/activate
-python -m src.server.api --host 0.0.0.0 --port 8001
+python -m src.server.api --host 0.0.0.0 --port 8002
 ```
 
 **Terminal 2 - Client:**

@@ -19,7 +19,7 @@ backchannel:
 mode: remote                # local | remote
 # Când mode: remote, TTS rulează pe server și clientul primește audio prin HTTP
 remote_host: "localhost"      # IP-ul serverului (localhost pentru test)
-remote_port: 8001             # Portul serverului
+remote_port: 8002             # Portul serverului
 remote_timeout: 30.0          # Timeout în secunde
 
 # Edge TTS settings (Microsoft Neural Voices)
